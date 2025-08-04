@@ -1,7 +1,8 @@
 # Unleash API client for Rustlang
 
-[Unleash](https://unleash.github.io) is a feature flag API system. This is a
-client for it to facilitate using the API to control features in Rust programs.
+[Unleash](https://unleash.github.io) is a private, secure, and scalable [feature management platform](https://www.getunleash.io/) built to reduce the risk of releasing new features and accelerate software development. This Rust SDK is designed to help you integrate with Unleash and evaluate feature flags in Rust programs.
+
+You can use this client with [Unleash Enterprise](https://www.getunleash.io/pricing?utm_source=readme&utm_medium={{language}}) or [Unleash Open Source](https://github.com/Unleash/unleash).
 
 ## Client overview
 
@@ -94,7 +95,7 @@ docker-compose up -d
 ```
 
 Visit `http://localhost:4242/` and log in with admin + unleash4all, then create
-a new API token at `http://localhost:4242/admin/api/create-token` for user
+a new Backend API token at `http://localhost:4242/admin/api/create-token` for user
 admin, type Client.
 
 Then run the test suite:
