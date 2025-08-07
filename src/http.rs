@@ -206,7 +206,7 @@ mod tests {
         assert_eq!(headers.get("unleash-interval").unwrap(), "15");
         assert_eq!(headers.get("authorization").unwrap(), "auth_token");
 
-        let version_regex = Regex::new(r"^unleash-client-rust:\d+\.\d+\.\d+$").unwrap();
+        let version_regex = Regex::new(r"^unleash-rust-sdk:\d+\.\d+\.\d+$").unwrap();
         let sdk_version = headers.get("unleash-sdk").unwrap();
         assert!(
             version_regex.is_match(sdk_version),
