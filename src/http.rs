@@ -54,7 +54,7 @@ where
             unleash_app_name_header: C::build_header("unleash-appname")?,
             unleash_sdk_header: C::build_header("unleash-sdk")?,
             unleash_connection_id_header: C::build_header("unleash-connection-id")?,
-            instance_id_header: C::build_header("instance_id")?,
+            instance_id_header: C::build_header("unleash-instanceid")?,
         })
     }
 
