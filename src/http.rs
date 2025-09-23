@@ -54,7 +54,7 @@ where
             unleash_app_name_header: C::build_header("unleash-appname")?,
             unleash_sdk_header: C::build_header("unleash-sdk")?,
             unleash_connection_id_header: C::build_header("unleash-connection-id")?,
-            instance_id_header: C::build_header("instance_id")?,
+            instance_id_header: C::build_header("unleash-instanceid")?,
         })
     }
 
@@ -198,7 +198,7 @@ mod tests {
         let headers = &http_client.client.headers.read().unwrap();
 
         assert_eq!(headers.get("unleash-appname").unwrap(), "my_app");
-        assert_eq!(headers.get("instance_id").unwrap(), "my_instance_id");
+        assert_eq!(headers.get("unleash-instanceid").unwrap(), "my_instance_id");
         assert_eq!(
             headers.get("unleash-connection-id").unwrap(),
             "d512f8ec-d972-40a5-9a30-a0a6e85d93ac"
