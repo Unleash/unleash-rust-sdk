@@ -14,18 +14,21 @@ use futures_timer::Delay;
 use log::{debug, trace, warn};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use unleash_types::client_features::ClientFeatures as YggdrasilClientFeatures;
+#[cfg(test)]
 use unleash_types::client_features::{
-    ClientFeature, ClientFeatures as YggdrasilClientFeatures, Constraint as YggdrasilConstraint,
-    Operator as YggdrasilOperator, Override as YggdrasilOverride, Payload as YggdrasilPayload,
-    Strategy as YggdrasilStrategy, Variant as YggdrasilVariant,
+    ClientFeature, Constraint as YggdrasilConstraint, Operator as YggdrasilOperator,
+    Override as YggdrasilOverride, Payload as YggdrasilPayload, Strategy as YggdrasilStrategy,
+    Variant as YggdrasilVariant,
 };
 use unleash_yggdrasil::{EngineState, UpdateMessage};
 use uuid::Uuid;
 
 use crate::api::{
-    self, ConstraintExpression, Feature, Features, Metrics, MetricsBucket, Registration,
-    ToggleMetrics,
+    self, Features, Metrics, MetricsBucket, Registration, ToggleMetrics,
 };
+#[cfg(test)]
+use crate::api::{ConstraintExpression, Feature};
 use crate::context::Context;
 use crate::http::{HttpClient, HTTP};
 use crate::strategy;
@@ -229,6 +232,7 @@ impl From<api::Variant> for CachedVariant {
     }
 }
 
+#[cfg(test)]
 fn api_constraint_to_yggdrasil(constraint: api::Constraint) -> Option<YggdrasilConstraint> {
     let (operator, values, value) = match constraint.expression {
         ConstraintExpression::DateAfter { value } => (
@@ -292,6 +296,7 @@ fn api_constraint_to_yggdrasil(constraint: api::Constraint) -> Option<YggdrasilC
     })
 }
 
+#[cfg(test)]
 fn api_strategy_to_yggdrasil(strategy: api::Strategy) -> YggdrasilStrategy {
     YggdrasilStrategy {
         name: strategy.name,
@@ -311,6 +316,7 @@ fn api_strategy_to_yggdrasil(strategy: api::Strategy) -> YggdrasilStrategy {
     }
 }
 
+#[cfg(test)]
 fn api_variant_to_yggdrasil(variant: api::Variant) -> YggdrasilVariant {
     let payload = variant.payload.and_then(|payload| {
         let payload_type = payload.get("type").cloned();
@@ -342,6 +348,7 @@ fn api_variant_to_yggdrasil(variant: api::Variant) -> YggdrasilVariant {
     }
 }
 
+#[cfg(test)]
 fn client_feature_to_yggdrasil(feature: Feature) -> ClientFeature {
     ClientFeature {
         name: feature.name,
@@ -364,6 +371,21 @@ fn client_feature_to_yggdrasil(feature: Feature) -> ClientFeature {
             .variants
             .map(|variants| variants.into_iter().map(api_variant_to_yggdrasil).collect()),
         dependencies: None,
+    }
+}
+
+#[cfg(test)]
+fn api_features_to_yggdrasil(features: Features) -> YggdrasilClientFeatures {
+    YggdrasilClientFeatures {
+        version: features.version.into(),
+        features: features
+            .features
+            .into_iter()
+            .map(client_feature_to_yggdrasil)
+            .collect(),
+        segments: None,
+        query: None,
+        meta: None,
     }
 }
 
@@ -612,22 +634,12 @@ where
     /// poll_for_updates is the usual way in which memoize will be called.
     pub fn memoize(
         &self,
-        features: Vec<Feature>,
+        client_features: YggdrasilClientFeatures,
     ) -> Result<Option<Metrics>, Box<dyn std::error::Error + Send + Sync>> {
-        let yggdrasil_features: Vec<ClientFeature> = features
-            .into_iter()
-            .map(client_feature_to_yggdrasil)
-            .collect();
-        self.memoize_update_message(UpdateMessage::FullResponse(YggdrasilClientFeatures {
-            version: 1,
-            features: yggdrasil_features,
-            segments: None,
-            query: None,
-            meta: None,
-        }))
+        self.memoize_update_message(UpdateMessage::FullResponse(client_features))
     }
 
-    fn memoize_update_message(
+    pub fn memoize_update_message(
         &self,
         update_message: UpdateMessage,
     ) -> Result<Option<Metrics>, Box<dyn std::error::Error + Send + Sync>> {
@@ -959,7 +971,7 @@ mod tests {
             .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(f.features).unwrap();
+        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
         let present: Context = Context {
             user_id: Some("present".into()),
             ..Default::default()
@@ -1002,7 +1014,7 @@ mod tests {
             .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(f.features).unwrap();
+        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
         let present: Context = Context {
             user_id: Some("present".into()),
             ..Default::default()
@@ -1096,7 +1108,7 @@ mod tests {
                 },
             ],
         };
-        client.memoize(f.features).unwrap();
+        client.memoize(super::api_features_to_yggdrasil(f)).unwrap();
         let present: Context = Context {
             user_id: Some("cba".into()),
             ..Default::default()
@@ -1211,7 +1223,7 @@ mod tests {
             .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(f.features).unwrap();
+        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
 
         // disabled should be disabled
         let variant = Variant::disabled();
@@ -1284,7 +1296,7 @@ mod tests {
             .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(f.features).unwrap();
+        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
 
         // disabled should be disabled
         let variant = Variant::disabled();
@@ -1356,7 +1368,7 @@ mod tests {
             .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(f.features).unwrap();
+        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
 
         c.get_variant(UserFeatures::disabled, &Context::default());
         c.get_variant(UserFeatures::novariants, &Context::default());
@@ -1373,7 +1385,10 @@ mod tests {
         c.get_variant(UserFeatures::two, &session1);
         c.get_variant(UserFeatures::two, &host1);
 
-        let metrics = c.memoize(variant_features().features).unwrap().unwrap();
+        let metrics = c
+            .memoize(super::api_features_to_yggdrasil(variant_features()))
+            .unwrap()
+            .unwrap();
         let variant_count = |feature_name, variant_name| -> u64 {
             metrics
                 .bucket
@@ -1410,7 +1425,7 @@ mod tests {
             .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(f.features).unwrap();
+        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
 
         c.get_variant_str("disabled", &Context::default());
         c.get_variant_str("novariants", &Context::default());
@@ -1431,7 +1446,10 @@ mod tests {
         c.get_variant_str("nonexistent-feature", &Context::default());
         c.get_variant_str("nonexistent-feature", &Context::default());
 
-        let metrics = c.memoize(variant_features().features).unwrap().unwrap();
+        let metrics = c
+            .memoize(super::api_features_to_yggdrasil(variant_features()))
+            .unwrap()
+            .unwrap();
         let variant_count = |feature_name, variant_name| -> u64 {
             metrics
                 .bucket

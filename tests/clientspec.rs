@@ -8,8 +8,9 @@ mod tests {
 
     use enum_map::Enum;
     use serde::{Deserialize, Serialize};
+    use unleash_yggdrasil::UpdateMessage;
 
-    use unleash_api_client::{api, client, context};
+    use unleash_api_client::{client, context};
 
     #[derive(Debug, Deserialize)]
     struct Test {
@@ -75,7 +76,7 @@ mod tests {
     struct Suite {
         #[serde(rename = "name")]
         _name: String,
-        state: api::Features,
+        state: UpdateMessage,
         #[serde(flatten)]
         tests: Tests,
     }
@@ -125,8 +126,8 @@ mod tests {
                     None,
                 )
                 .unwrap();
-            log::info!("Using features {:?}", &suite.state.features);
-            c.memoize(suite.state.features).unwrap();
+            log::info!("Using update message");
+            c.memoize_update_message(suite.state).unwrap();
 
             match suite.tests {
                 Tests::Tests(tests) => {
