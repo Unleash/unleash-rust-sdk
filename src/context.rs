@@ -5,6 +5,7 @@ use std::{collections::HashMap, net::IpAddr};
 
 use chrono::DateTime;
 use serde::{de, Deserialize};
+use unleash_yggdrasil::Context as YggdrasilContext;
 
 // Custom IP Address newtype that can be deserialised from strings e.g. 127.0.0.1 for use with tests.
 #[derive(Debug)]
@@ -40,6 +41,20 @@ pub struct Context {
     #[serde(default)]
     pub environment: String,
     pub current_time: Option<DateTime<Utc>>,
+}
+
+impl Context {
+    pub(crate) fn to_yggdrasil_context(&self) -> YggdrasilContext {
+        YggdrasilContext {
+            user_id: self.user_id.clone(),
+            session_id: self.session_id.clone(),
+            environment: Some(self.environment.clone()),
+            app_name: Some(self.app_name.clone()),
+            current_time: self.current_time.map(|dt| dt.to_rfc3339()),
+            remote_address: self.remote_address.as_ref().map(|ip| ip.0.to_string()),
+            properties: Some(self.properties.clone()),
+        }
+    }
 }
 
 fn deserialize_context_properties<'de, D>(
