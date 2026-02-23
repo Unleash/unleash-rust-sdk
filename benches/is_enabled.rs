@@ -16,6 +16,7 @@ use enum_map::Enum;
 use maplit::hashmap;
 use rand::{distr::Alphanumeric, rng, Rng};
 use serde::{Deserialize, Serialize};
+use unleash_types::client_features::ClientFeatures;
 
 use unleash_api_client::api::{Feature, Features, Strategy};
 use unleash_api_client::client;
@@ -202,7 +203,9 @@ where
         version: 1,
         features,
     };
-    client.memoize(f.features).unwrap();
+    let client_features: ClientFeatures =
+        serde_json::from_value(serde_json::to_value(f).unwrap()).unwrap();
+    client.memoize(client_features).unwrap();
     client
 }
 

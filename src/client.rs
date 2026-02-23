@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use arc_swap::{ArcSwap, ArcSwapOption};
+use arc_swap::ArcSwapOption;
 use chrono::Utc;
 use enum_map::{EnumArray, EnumMap};
 use futures_timer::Delay;
@@ -398,7 +398,7 @@ where
     // The default value of F is defined as 'fallback to string lookups'.
     features: EnumMap<F, CachedFeature>,
     str_features: HashMap<String, CachedFeature>,
-    engine_state: ArcSwap<EngineState>,
+    engine_state: Arc<Mutex<EngineState>>,
 }
 
 impl<F> CachedState<F>
@@ -462,11 +462,15 @@ where
         } else {
             let default_context = Context::default();
             let context = context.unwrap_or(&default_context).to_yggdrasil_context();
-            let engine = self.engine_state.load();
-            engine.is_enabled(feature_name.as_str(), &context, &None)
+            self.engine_state
+                .lock()
+                .unwrap()
+                .is_enabled(feature_name.as_str(), &context, &None)
         };
-        let engine = self.engine_state.load();
-        engine.count_toggle(feature_name.as_str(), feature_enabled);
+        self.engine_state
+            .lock()
+            .unwrap()
+            .count_toggle(feature_name.as_str(), feature_enabled);
         feature_enabled
     }
 
@@ -480,14 +484,18 @@ where
         let enabled = if self.str_features.contains_key(feature_name) {
             let default_context = Context::default();
             let context = context.unwrap_or(&default_context).to_yggdrasil_context();
-            let engine = self.engine_state.load();
-            engine.is_enabled(feature_name, &context, &None)
+            self.engine_state
+                .lock()
+                .unwrap()
+                .is_enabled(feature_name, &context, &None)
         } else {
             debug!("is_enabled: Unknown feature {feature_name}, using default {default}");
             default
         };
-        let engine = self.engine_state.load();
-        engine.count_toggle(feature_name, enabled);
+        self.engine_state
+            .lock()
+            .unwrap()
+            .count_toggle(feature_name, enabled);
         enabled
     }
 }
@@ -530,13 +538,20 @@ where
             return Variant::disabled();
         };
         if !cache.features[feature_enum.clone()].known {
-            let engine = cache.engine_state.load();
-            engine.count_toggle(feature_name.as_str(), false);
-            engine.count_variant(feature_name.as_str(), "disabled");
+            cache
+                .engine_state
+                .lock()
+                .unwrap()
+                .count_toggle(feature_name.as_str(), false);
+            cache
+                .engine_state
+                .lock()
+                .unwrap()
+                .count_variant(feature_name.as_str(), "disabled");
             return Variant::disabled();
         }
         let ygg_context = context.to_yggdrasil_context();
-        let engine = cache.engine_state.load();
+        let engine = cache.engine_state.lock().unwrap();
         let enabled = engine.is_enabled(feature_name.as_str(), &ygg_context, &None);
         engine.count_toggle(feature_name.as_str(), enabled);
         let variant = engine.get_variant(feature_name.as_str(), &ygg_context, &None);
@@ -566,13 +581,13 @@ where
             Some(cache) => cache,
         };
         if !cache.str_features.contains_key(feature_name) {
-            let engine = cache.engine_state.load();
+            let engine = cache.engine_state.lock().unwrap();
             engine.count_toggle(feature_name, false);
             engine.count_variant(feature_name, "disabled");
             return Variant::disabled();
         }
         let ygg_context = context.to_yggdrasil_context();
-        let engine = cache.engine_state.load();
+        let engine = cache.engine_state.lock().unwrap();
         let enabled = engine.is_enabled(feature_name, &ygg_context, &None);
         engine.count_toggle(feature_name, enabled);
         let variant = engine.get_variant(feature_name, &ygg_context, &None);
@@ -632,8 +647,11 @@ where
         let now = Utc::now();
 
         let prior_state = self.cached_state.load().as_ref().map(|cached_state| {
-            let engine = cached_state.engine_state.load();
-            engine.get_state()
+            cached_state
+                .engine_state
+                .lock()
+                .unwrap()
+                .get_state()
         });
 
         let mut engine_state = EngineState::default();
@@ -673,30 +691,20 @@ where
             start: now,
             features: cached_features,
             str_features: unenumerated_features,
-            engine_state: ArcSwap::from_pointee(engine_state),
+            engine_state: Arc::new(Mutex::new(engine_state)),
         };
         // Now we have the new cache compiled, swap it in.
         let old = self.cached_state.swap(Some(Arc::new(new_cache)));
         trace!("memoize: swapped memoized state in");
         if let Some(old) = old {
-            let old_engine = old.engine_state.swap(Arc::new(EngineState::default()));
-            let yggdrasil_metrics = match Arc::try_unwrap(old_engine) {
-                Ok(mut engine_state) => match engine_state.get_metrics(now) {
-                    Some(bucket) => bucket,
-                    None => unleash_types::client_metrics::MetricBucket {
-                        start: old.start,
-                        stop: now,
-                        toggles: HashMap::new(),
-                    },
+            let mut engine_state = old.engine_state.lock().unwrap();
+            let yggdrasil_metrics = match engine_state.get_metrics(now) {
+                Some(bucket) => bucket,
+                None => unleash_types::client_metrics::MetricBucket {
+                    start: old.start,
+                    stop: now,
+                    toggles: HashMap::new(),
                 },
-                Err(_) => {
-                    warn!("memoize: old engine still referenced, skipping metric rollover");
-                    unleash_types::client_metrics::MetricBucket {
-                        start: old.start,
-                        stop: now,
-                        toggles: HashMap::new(),
-                    }
-                }
             };
             let bucket = MetricsBucket {
                 start: yggdrasil_metrics.start,
