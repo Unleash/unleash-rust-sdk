@@ -1,15 +1,16 @@
 // Copyright 2020 Cognite AS
 //! The primary interface for users of the library.
 use std::collections::hash_map::HashMap;
+use std::collections::HashSet;
 use std::default::Default;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use arc_swap::ArcSwapOption;
 use chrono::Utc;
-use enum_map::{EnumArray, EnumMap};
 use futures_timer::Delay;
 use log::{debug, trace, warn};
 use serde::de::DeserializeOwned;
@@ -19,7 +20,7 @@ use unleash_types::client_features::ClientFeatures as YggdrasilClientFeatures;
 use unleash_yggdrasil::{EngineState, UpdateMessage};
 use uuid::Uuid;
 
-use crate::api::{self, Features, Metrics, MetricsBucket, Registration, ToggleMetrics};
+use crate::api::{Features, Metrics, MetricsBucket, Registration, ToggleMetrics};
 use crate::context::Context;
 use crate::http::{HttpClient, HTTP};
 use crate::strategy;
@@ -33,16 +34,6 @@ pub struct Variant {
     pub name: String,
     pub payload: HashMap<String, String>,
     pub enabled: bool,
-}
-
-impl From<&CachedVariant> for Variant {
-    fn from(variant: &CachedVariant) -> Self {
-        Self {
-            name: variant.value.name.clone(),
-            payload: variant.value.payload.as_ref().cloned().unwrap_or_default(),
-            enabled: true,
-        }
-    }
 }
 
 impl Variant {
@@ -90,7 +81,7 @@ impl ClientBuilder {
         authorization: Option<String>,
     ) -> Result<Client<F, C>, C::Error>
     where
-        F: EnumArray<CachedFeature> + Debug + DeserializeOwned + Serialize,
+        F: Debug + DeserializeOwned + Serialize,
         C: HttpClient + Default,
     {
         let connection_id = Uuid::new_v4().to_string();
@@ -156,98 +147,17 @@ impl Default for ClientBuilder {
     }
 }
 
-#[derive(Default)]
-pub struct CachedFeature {
-    pub strategies: Vec<strategy::Evaluate>,
-    // unknown features are tracked for metrics (so the server can see that they
-    // are being used). They require specific logic (see is_enabled).
-    known: bool,
-    // Tracks metrics during a refresh interval. If the AtomicBool updates show
-    // to be a contention point then thread-sharded counters with a gather phase
-    // on submission will be the next logical progression.
-    enabled: AtomicU64,
-    disabled: AtomicU64,
-    disabled_variant_count: AtomicU64,
-    // Variants for use with get_variant
-    variants: Vec<CachedVariant>,
-}
-
-impl From<&CachedFeature> for ToggleMetrics {
-    fn from(feature: &CachedFeature) -> Self {
-        ToggleMetrics {
-            yes: feature.enabled.load(Ordering::Relaxed),
-            no: feature.disabled.load(Ordering::Relaxed),
-            variants: feature.variant_metrics(),
-        }
-    }
-}
-
-impl CachedFeature {
-    fn variant_metrics(&self) -> HashMap<String, u64> {
-        self.variants
-            .iter()
-            .map(|variant| {
-                (
-                    variant.value.name.clone(),
-                    variant.count.load(Ordering::Relaxed),
-                )
-            })
-            .chain([(
-                "disabled".into(),
-                self.disabled_variant_count.load(Ordering::Relaxed),
-            )])
-            .collect()
-    }
-}
-
-pub struct CachedVariant {
-    count: AtomicU64,
-    value: api::Variant,
-}
-
-impl Clone for CachedVariant {
-    fn clone(&self) -> Self {
-        Self {
-            count: AtomicU64::new(self.count.load(Ordering::Relaxed)),
-            value: self.value.clone(),
-        }
-    }
-}
-
-impl From<api::Variant> for CachedVariant {
-    fn from(variant: api::Variant) -> Self {
-        CachedVariant {
-            value: variant,
-            count: AtomicU64::new(0),
-        }
-    }
-}
-
 pub struct CachedState<F>
-where
-    F: EnumArray<CachedFeature>,
 {
     start: chrono::DateTime<chrono::Utc>,
-    // user supplies F defining the features they need
-    // The default value of F is defined as 'fallback to string lookups'.
-    features: EnumMap<F, CachedFeature>,
-    str_features: HashMap<String, CachedFeature>,
+    known_features: HashSet<String>,
     engine_state: Arc<Mutex<EngineState>>,
-}
-
-impl<F> CachedState<F>
-where
-    F: EnumArray<CachedFeature>,
-{
-    /// Access the cached string features.
-    pub fn str_features(&self) -> &HashMap<String, CachedFeature> {
-        &self.str_features
-    }
+    _feature_type: PhantomData<F>,
 }
 
 pub struct Client<F, C>
 where
-    F: EnumArray<CachedFeature> + Debug + DeserializeOwned + Serialize,
+    F: Debug + DeserializeOwned + Serialize,
     C: HttpClient,
 {
     api_url: String,
@@ -266,77 +176,9 @@ where
     cached_state: ArcSwapOption<CachedState<F>>,
 }
 
-trait Enabled<F>
-where
-    F: EnumArray<CachedFeature>,
-{
-    fn is_enabled(&self, feature_enum: F, context: Option<&Context>, default: bool) -> bool;
-    fn is_enabled_str(
-        &self,
-        feature_name: &str,
-        context: Option<&Context>,
-        default: bool,
-        cached_features: &ArcSwapOption<CachedState<F>>,
-    ) -> bool;
-}
-
-impl<F> Enabled<F> for &Arc<CachedState<F>>
-where
-    F: EnumArray<CachedFeature> + Clone + Debug + DeserializeOwned + Serialize,
-{
-    fn is_enabled(&self, feature_enum: F, context: Option<&Context>, default: bool) -> bool {
-        trace!("is_enabled: feature {feature_enum:?} default {default}, context {context:?}");
-        let feature = &self.features[feature_enum.clone()];
-        let Some(feature_name) = serde_plain::to_string(&feature_enum).ok() else {
-            return default;
-        };
-        let feature_enabled = if !feature.known {
-            debug!("is_enabled: Unknown feature {feature_enum:?}, using default {default}");
-            default
-        } else {
-            let default_context = Context::default();
-            let context = context.unwrap_or(&default_context).to_yggdrasil_context();
-            self.engine_state
-                .lock()
-                .unwrap()
-                .is_enabled(feature_name.as_str(), &context, &None)
-        };
-        self.engine_state
-            .lock()
-            .unwrap()
-            .count_toggle(feature_name.as_str(), feature_enabled);
-        feature_enabled
-    }
-
-    fn is_enabled_str(
-        &self,
-        feature_name: &str,
-        context: Option<&Context>,
-        default: bool,
-        _cached_features: &ArcSwapOption<CachedState<F>>,
-    ) -> bool {
-        let enabled = if self.str_features.contains_key(feature_name) {
-            let default_context = Context::default();
-            let context = context.unwrap_or(&default_context).to_yggdrasil_context();
-            self.engine_state
-                .lock()
-                .unwrap()
-                .is_enabled(feature_name, &context, &None)
-        } else {
-            debug!("is_enabled: Unknown feature {feature_name}, using default {default}");
-            default
-        };
-        self.engine_state
-            .lock()
-            .unwrap()
-            .count_toggle(feature_name, enabled);
-        enabled
-    }
-}
-
 impl<F, C> Client<F, C>
 where
-    F: EnumArray<CachedFeature> + Clone + Debug + DeserializeOwned + Serialize,
+    F: Debug + DeserializeOwned + Serialize,
     C: HttpClient + Default,
 {
     /// The cached state can be accessed. It may be uninitialised, and
@@ -371,7 +213,7 @@ where
         let Some(feature_name) = serde_plain::to_string(&feature_enum).ok() else {
             return Variant::disabled();
         };
-        if !cache.features[feature_enum.clone()].known {
+        if !cache.known_features.contains(feature_name.as_str()) {
             cache
                 .engine_state
                 .lock()
@@ -414,7 +256,7 @@ where
             }
             Some(cache) => cache,
         };
-        if !cache.str_features.contains_key(feature_name) {
+        if !cache.known_features.contains(feature_name) {
             let engine = cache.engine_state.lock().unwrap();
             engine.count_toggle(feature_name, false);
             engine.count_variant(feature_name, "disabled");
@@ -439,7 +281,27 @@ where
             }
             Some(cache) => cache,
         };
-        cache.is_enabled(feature_enum, context, default)
+        let Some(feature_name) = serde_plain::to_string(&feature_enum).ok() else {
+            return default;
+        };
+        let enabled = if cache.known_features.contains(feature_name.as_str()) {
+            let default_context = Context::default();
+            let ygg_context = context.unwrap_or(&default_context).to_yggdrasil_context();
+            cache
+                .engine_state
+                .lock()
+                .unwrap()
+                .is_enabled(feature_name.as_str(), &ygg_context, &None)
+        } else {
+            debug!("is_enabled: Unknown feature {feature_enum:?}, using default {default}");
+            default
+        };
+        cache
+            .engine_state
+            .lock()
+            .unwrap()
+            .count_toggle(feature_name.as_str(), enabled);
+        enabled
     }
 
     pub fn is_enabled_str(
@@ -458,7 +320,24 @@ where
             None => return false,
             Some(cache) => cache,
         };
-        cache.is_enabled_str(feature_name, context, default, &self.cached_state)
+        let enabled = if cache.known_features.contains(feature_name) {
+            let default_context = Context::default();
+            let ygg_context = context.unwrap_or(&default_context).to_yggdrasil_context();
+            cache
+                .engine_state
+                .lock()
+                .unwrap()
+                .is_enabled(feature_name, &ygg_context, &None)
+        } else {
+            debug!("is_enabled: Unknown feature {feature_name}, using default {default}");
+            default
+        };
+        cache
+            .engine_state
+            .lock()
+            .unwrap()
+            .count_toggle(feature_name, enabled);
+        enabled
     }
 
     /// Memoize new features into the cached state
@@ -504,29 +383,16 @@ where
             "memoize: start with {} features",
             current_state.features.len()
         );
-        let mut unenumerated_features: HashMap<String, CachedFeature> = HashMap::new();
-        let mut cached_features: EnumMap<F, CachedFeature> = EnumMap::default();
-
-        for feature in current_state.features {
-            let cached_feature = CachedFeature {
-                strategies: vec![],
-                disabled: AtomicU64::new(0),
-                enabled: AtomicU64::new(0),
-                disabled_variant_count: AtomicU64::new(0),
-                known: true,
-                variants: vec![],
-            };
-            if let Ok(feature_enum) = serde_plain::from_str::<F>(feature.name.as_str()) {
-                cached_features[feature_enum] = cached_feature;
-            } else {
-                unenumerated_features.insert(feature.name.clone(), cached_feature);
-            }
-        }
+        let known_features = current_state
+            .features
+            .into_iter()
+            .map(|feature| feature.name)
+            .collect();
         let new_cache = CachedState {
             start: now,
-            features: cached_features,
-            str_features: unenumerated_features,
+            known_features,
             engine_state: Arc::new(Mutex::new(engine_state)),
+            _feature_type: PhantomData,
         };
         // Now we have the new cache compiled, swap it in.
         let old = self.cached_state.swap(Some(Arc::new(new_cache)));
@@ -688,16 +554,13 @@ mod tests {
     use std::collections::hash_set::HashSet;
     use std::default::Default;
     use std::hash::BuildHasher;
-    use std::sync::atomic::AtomicU64;
-
     use enum_map::Enum;
     use maplit::hashmap;
     use serde::{Deserialize, Serialize};
     use unleash_yggdrasil::{EngineState, UpdateMessage};
 
     use super::{ClientBuilder, Variant};
-    use crate::api::{self, Feature, Features, Strategy, ToggleMetrics};
-    use crate::client::{CachedFeature, CachedVariant};
+    use crate::api::{self, Feature, Features, Strategy};
     use crate::context::{Context, IPAddress};
     use crate::strategy;
 
@@ -1318,52 +1181,6 @@ mod tests {
             2
         );
         assert_eq!(variant_count("nonexistent-feature", "disabled"), 2);
-    }
-
-    #[test]
-    fn cached_feature_into_toggle_metrics() {
-        let variant_counts = [("a", 36), ("b", 16), ("c", 42)];
-
-        let variants = variant_counts
-            .iter()
-            .map(|(name, count)| CachedVariant {
-                count: AtomicU64::from(*count),
-                value: api::Variant {
-                    name: (*name).into(),
-                    weight: 0,
-                    payload: None,
-                    overrides: None,
-                },
-            })
-            .collect();
-
-        let yes_count = 85;
-        let no_count = 364;
-        let disabled_variant_count = 56;
-
-        let feature = CachedFeature {
-            strategies: vec![],
-            disabled: AtomicU64::new(no_count),
-            enabled: AtomicU64::new(yes_count),
-            known: true,
-            variants,
-            disabled_variant_count: AtomicU64::new(disabled_variant_count),
-        };
-
-        let metrics: ToggleMetrics = (&feature).into();
-
-        assert_eq!(metrics.yes, yes_count);
-        assert_eq!(metrics.no, no_count);
-
-        let converted_metrics = metrics.variants;
-        for (variant, count) in variant_counts {
-            assert_eq!(*converted_metrics.get(variant).unwrap(), count);
-        }
-
-        assert_eq!(
-            *converted_metrics.get("disabled").unwrap(),
-            disabled_variant_count
-        )
     }
 
     #[test]
