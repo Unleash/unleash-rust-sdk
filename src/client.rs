@@ -15,20 +15,11 @@ use log::{debug, trace, warn};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use unleash_types::client_features::ClientFeatures as YggdrasilClientFeatures;
-#[cfg(test)]
-use unleash_types::client_features::{
-    ClientFeature, Constraint as YggdrasilConstraint, Operator as YggdrasilOperator,
-    Override as YggdrasilOverride, Payload as YggdrasilPayload, Strategy as YggdrasilStrategy,
-    Variant as YggdrasilVariant,
-};
+
 use unleash_yggdrasil::{EngineState, UpdateMessage};
 use uuid::Uuid;
 
-use crate::api::{
-    self, Features, Metrics, MetricsBucket, Registration, ToggleMetrics,
-};
-#[cfg(test)]
-use crate::api::{ConstraintExpression, Feature};
+use crate::api::{self, Features, Metrics, MetricsBucket, Registration, ToggleMetrics};
 use crate::context::Context;
 use crate::http::{HttpClient, HTTP};
 use crate::strategy;
@@ -229,163 +220,6 @@ impl From<api::Variant> for CachedVariant {
             value: variant,
             count: AtomicU64::new(0),
         }
-    }
-}
-
-#[cfg(test)]
-fn api_constraint_to_yggdrasil(constraint: api::Constraint) -> Option<YggdrasilConstraint> {
-    let (operator, values, value) = match constraint.expression {
-        ConstraintExpression::DateAfter { value } => (
-            YggdrasilOperator::DateAfter,
-            None,
-            Some(value.to_rfc3339()),
-        ),
-        ConstraintExpression::DateBefore { value } => (
-            YggdrasilOperator::DateBefore,
-            None,
-            Some(value.to_rfc3339()),
-        ),
-        ConstraintExpression::In { values } => (YggdrasilOperator::In, Some(values), None),
-        ConstraintExpression::NotIn { values } => (YggdrasilOperator::NotIn, Some(values), None),
-        ConstraintExpression::NumEq { value } => {
-            (YggdrasilOperator::NumEq, None, Some(value.to_string()))
-        }
-        ConstraintExpression::NumGT { value } => {
-            (YggdrasilOperator::NumGt, None, Some(value.to_string()))
-        }
-        ConstraintExpression::NumGTE { value } => {
-            (YggdrasilOperator::NumGte, None, Some(value.to_string()))
-        }
-        ConstraintExpression::NumLT { value } => {
-            (YggdrasilOperator::NumLt, None, Some(value.to_string()))
-        }
-        ConstraintExpression::NumLTE { value } => {
-            (YggdrasilOperator::NumLte, None, Some(value.to_string()))
-        }
-        ConstraintExpression::SemverEq { value } => {
-            (YggdrasilOperator::SemverEq, None, Some(value.to_string()))
-        }
-        ConstraintExpression::SemverGT { value } => {
-            (YggdrasilOperator::SemverGt, None, Some(value.to_string()))
-        }
-        ConstraintExpression::SemverLT { value } => {
-            (YggdrasilOperator::SemverLt, None, Some(value.to_string()))
-        }
-        ConstraintExpression::StrContains { values } => {
-            (YggdrasilOperator::StrContains, Some(values), None)
-        }
-        ConstraintExpression::StrStartsWith { values } => {
-            (YggdrasilOperator::StrStartsWith, Some(values), None)
-        }
-        ConstraintExpression::StrEndsWith { values } => {
-            (YggdrasilOperator::StrEndsWith, Some(values), None)
-        }
-        ConstraintExpression::Unknown(_) => (
-            YggdrasilOperator::In,
-            Some(Vec::new()),
-            None,
-        ),
-    };
-    Some(YggdrasilConstraint {
-        context_name: constraint.context_name,
-        operator,
-        case_insensitive: constraint.case_insensitive,
-        inverted: constraint.inverted,
-        values,
-        value,
-    })
-}
-
-#[cfg(test)]
-fn api_strategy_to_yggdrasil(strategy: api::Strategy) -> YggdrasilStrategy {
-    YggdrasilStrategy {
-        name: strategy.name,
-        sort_order: None,
-        segments: None,
-        constraints: strategy
-            .constraints
-            .map(|constraints| {
-                constraints
-                    .into_iter()
-                    .filter_map(api_constraint_to_yggdrasil)
-                    .collect::<Vec<_>>()
-            })
-            .filter(|constraints| !constraints.is_empty()),
-        parameters: strategy.parameters,
-        variants: None,
-    }
-}
-
-#[cfg(test)]
-fn api_variant_to_yggdrasil(variant: api::Variant) -> YggdrasilVariant {
-    let payload = variant.payload.and_then(|payload| {
-        let payload_type = payload.get("type").cloned();
-        let value = payload.get("value").cloned();
-        match (payload_type, value) {
-            (Some(payload_type), Some(value)) => Some(YggdrasilPayload {
-                payload_type,
-                value,
-            }),
-            _ => None,
-        }
-    });
-
-    YggdrasilVariant {
-        name: variant.name,
-        weight: i32::from(variant.weight),
-        weight_type: None,
-        stickiness: None,
-        payload,
-        overrides: variant.overrides.map(|overrides| {
-            overrides
-                .into_iter()
-                .map(|override_value| YggdrasilOverride {
-                    context_name: override_value.context_name,
-                    values: override_value.values,
-                })
-                .collect()
-        }),
-    }
-}
-
-#[cfg(test)]
-fn client_feature_to_yggdrasil(feature: Feature) -> ClientFeature {
-    ClientFeature {
-        name: feature.name,
-        feature_type: None,
-        description: feature.description,
-        created_at: feature.created_at,
-        last_seen_at: None,
-        enabled: feature.enabled,
-        stale: None,
-        impression_data: None,
-        project: None,
-        strategies: Some(
-            feature
-                .strategies
-                .into_iter()
-                .map(api_strategy_to_yggdrasil)
-                .collect(),
-        ),
-        variants: feature
-            .variants
-            .map(|variants| variants.into_iter().map(api_variant_to_yggdrasil).collect()),
-        dependencies: None,
-    }
-}
-
-#[cfg(test)]
-fn api_features_to_yggdrasil(features: Features) -> YggdrasilClientFeatures {
-    YggdrasilClientFeatures {
-        version: features.version.into(),
-        features: features
-            .features
-            .into_iter()
-            .map(client_feature_to_yggdrasil)
-            .collect(),
-        segments: None,
-        query: None,
-        meta: None,
     }
 }
 
@@ -646,13 +480,11 @@ where
     ) -> Result<Option<Metrics>, Box<dyn std::error::Error + Send + Sync>> {
         let now = Utc::now();
 
-        let prior_state = self.cached_state.load().as_ref().map(|cached_state| {
-            cached_state
-                .engine_state
-                .lock()
-                .unwrap()
-                .get_state()
-        });
+        let prior_state = self
+            .cached_state
+            .load()
+            .as_ref()
+            .map(|cached_state| cached_state.engine_state.lock().unwrap().get_state());
 
         let mut engine_state = EngineState::default();
         if let Some(state) = prior_state {
@@ -668,7 +500,10 @@ where
         }
 
         let current_state = engine_state.get_state();
-        trace!("memoize: start with {} features", current_state.features.len());
+        trace!(
+            "memoize: start with {} features",
+            current_state.features.len()
+        );
         let mut unenumerated_features: HashMap<String, CachedFeature> = HashMap::new();
         let mut cached_features: EnumMap<F, CachedFeature> = EnumMap::default();
 
@@ -759,32 +594,30 @@ where
                 .get_json::<UpdateMessage>(&endpoint, Some(self.interval))
                 .await
             {
-                Ok(update_message) => {
-                    match self.memoize_update_message(update_message) {
-                        Ok(None) => {}
-                        Ok(Some(metrics)) => {
-                            if !self.disable_metric_submission {
-                                let mut metrics_uploaded = false;
-                                let res = self
-                                    .http
-                                    .post_json(&metrics_endpoint, metrics, Some(self.interval))
-                                    .await;
-                                if let Ok(successful) = res {
-                                    if successful {
-                                        metrics_uploaded = true;
-                                        debug!("poll: uploaded feature metrics")
-                                    }
-                                }
-                                if !metrics_uploaded {
-                                    warn!("poll: error uploading feature metrics");
+                Ok(update_message) => match self.memoize_update_message(update_message) {
+                    Ok(None) => {}
+                    Ok(Some(metrics)) => {
+                        if !self.disable_metric_submission {
+                            let mut metrics_uploaded = false;
+                            let res = self
+                                .http
+                                .post_json(&metrics_endpoint, metrics, Some(self.interval))
+                                .await;
+                            if let Ok(successful) = res {
+                                if successful {
+                                    metrics_uploaded = true;
+                                    debug!("poll: uploaded feature metrics")
                                 }
                             }
-                        }
-                        Err(err) => {
-                            warn!("poll: failed to memoize features: {err:?}");
+                            if !metrics_uploaded {
+                                warn!("poll: error uploading feature metrics");
+                            }
                         }
                     }
-                }
+                    Err(err) => {
+                        warn!("poll: failed to memoize features: {err:?}");
+                    }
+                },
                 Err(err) => {
                     warn!("poll: failed to retrieve features: {err:?}");
                 }
@@ -860,7 +693,6 @@ mod tests {
     use enum_map::Enum;
     use maplit::hashmap;
     use serde::{Deserialize, Serialize};
-    use unleash_types::client_features::ClientFeatures;
     use unleash_yggdrasil::{EngineState, UpdateMessage};
 
     use super::{ClientBuilder, Variant};
@@ -868,6 +700,16 @@ mod tests {
     use crate::client::{CachedFeature, CachedVariant};
     use crate::context::{Context, IPAddress};
     use crate::strategy;
+
+    use crate::api::ConstraintExpression;
+
+    use unleash_types::client_features::{
+        ClientFeature, Constraint as YggdrasilConstraint, Operator as YggdrasilOperator,
+        Override as YggdrasilOverride, Payload as YggdrasilPayload, Strategy as YggdrasilStrategy,
+        Variant as YggdrasilVariant,
+    };
+
+    use unleash_types::client_features::ClientFeatures as YggdrasilClientFeatures;
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "reqwest")] {
@@ -972,7 +814,7 @@ mod tests {
             .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
+        c.memoize(api_features_to_yggdrasil(f)).unwrap();
         let present: Context = Context {
             user_id: Some("present".into()),
             ..Default::default()
@@ -1015,7 +857,7 @@ mod tests {
             .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
+        c.memoize(api_features_to_yggdrasil(f)).unwrap();
         let present: Context = Context {
             user_id: Some("present".into()),
             ..Default::default()
@@ -1109,7 +951,7 @@ mod tests {
                 },
             ],
         };
-        client.memoize(super::api_features_to_yggdrasil(f)).unwrap();
+        client.memoize(api_features_to_yggdrasil(f)).unwrap();
         let present: Context = Context {
             user_id: Some("cba".into()),
             ..Default::default()
@@ -1224,7 +1066,7 @@ mod tests {
             .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
+        c.memoize(api_features_to_yggdrasil(f)).unwrap();
 
         // disabled should be disabled
         let variant = Variant::disabled();
@@ -1297,7 +1139,7 @@ mod tests {
             .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
+        c.memoize(api_features_to_yggdrasil(f)).unwrap();
 
         // disabled should be disabled
         let variant = Variant::disabled();
@@ -1369,7 +1211,7 @@ mod tests {
             .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
+        c.memoize(api_features_to_yggdrasil(f)).unwrap();
 
         c.get_variant(UserFeatures::disabled, &Context::default());
         c.get_variant(UserFeatures::novariants, &Context::default());
@@ -1387,7 +1229,7 @@ mod tests {
         c.get_variant(UserFeatures::two, &host1);
 
         let metrics = c
-            .memoize(super::api_features_to_yggdrasil(variant_features()))
+            .memoize(api_features_to_yggdrasil(variant_features()))
             .unwrap()
             .unwrap();
         let variant_count = |feature_name, variant_name| -> u64 {
@@ -1401,11 +1243,15 @@ mod tests {
                 .copied()
                 .unwrap_or(0)
         };
-        let disabled_variant_count = |feature_name| -> u64 { variant_count(feature_name, "disabled") };
+        let disabled_variant_count =
+            |feature_name| -> u64 { variant_count(feature_name, "disabled") };
 
         assert_eq!(disabled_variant_count("disabled"), 1);
         assert_eq!(disabled_variant_count("novariants"), 1);
-        assert_eq!(variant_count("two", "variantone") + variant_count("two", "varianttwo"), 2);
+        assert_eq!(
+            variant_count("two", "variantone") + variant_count("two", "varianttwo"),
+            2
+        );
     }
 
     #[test]
@@ -1426,7 +1272,7 @@ mod tests {
             .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
             .unwrap();
 
-        c.memoize(super::api_features_to_yggdrasil(f)).unwrap();
+        c.memoize(api_features_to_yggdrasil(f)).unwrap();
 
         c.get_variant_str("disabled", &Context::default());
         c.get_variant_str("novariants", &Context::default());
@@ -1448,7 +1294,7 @@ mod tests {
         c.get_variant_str("nonexistent-feature", &Context::default());
 
         let metrics = c
-            .memoize(super::api_features_to_yggdrasil(variant_features()))
+            .memoize(api_features_to_yggdrasil(variant_features()))
             .unwrap()
             .unwrap();
         let variant_count = |feature_name, variant_name| -> u64 {
@@ -1462,11 +1308,15 @@ mod tests {
                 .copied()
                 .unwrap_or(0)
         };
-        let disabled_variant_count = |feature_name| -> u64 { variant_count(feature_name, "disabled") };
+        let disabled_variant_count =
+            |feature_name| -> u64 { variant_count(feature_name, "disabled") };
 
         assert_eq!(disabled_variant_count("disabled"), 1);
         assert_eq!(disabled_variant_count("novariants"), 1);
-        assert_eq!(variant_count("two", "variantone") + variant_count("two", "varianttwo"), 2);
+        assert_eq!(
+            variant_count("two", "variantone") + variant_count("two", "varianttwo"),
+            2
+        );
         assert_eq!(variant_count("nonexistent-feature", "disabled"), 2);
     }
 
@@ -1518,7 +1368,7 @@ mod tests {
 
     #[test]
     fn yggdrasil_usage() {
-        let client_features = ClientFeatures {
+        let client_features = YggdrasilClientFeatures {
             ..Default::default()
         };
 
@@ -1542,5 +1392,153 @@ mod tests {
 
         engine.count_toggle("test", true);
         engine.count_variant("test", "variantone");
+    }
+
+    fn api_constraint_to_yggdrasil(constraint: api::Constraint) -> Option<YggdrasilConstraint> {
+        let (operator, values, value) = match constraint.expression {
+            ConstraintExpression::DateAfter { value } => {
+                (YggdrasilOperator::DateAfter, None, Some(value.to_rfc3339()))
+            }
+            ConstraintExpression::DateBefore { value } => (
+                YggdrasilOperator::DateBefore,
+                None,
+                Some(value.to_rfc3339()),
+            ),
+            ConstraintExpression::In { values } => (YggdrasilOperator::In, Some(values), None),
+            ConstraintExpression::NotIn { values } => {
+                (YggdrasilOperator::NotIn, Some(values), None)
+            }
+            ConstraintExpression::NumEq { value } => {
+                (YggdrasilOperator::NumEq, None, Some(value.to_string()))
+            }
+            ConstraintExpression::NumGT { value } => {
+                (YggdrasilOperator::NumGt, None, Some(value.to_string()))
+            }
+            ConstraintExpression::NumGTE { value } => {
+                (YggdrasilOperator::NumGte, None, Some(value.to_string()))
+            }
+            ConstraintExpression::NumLT { value } => {
+                (YggdrasilOperator::NumLt, None, Some(value.to_string()))
+            }
+            ConstraintExpression::NumLTE { value } => {
+                (YggdrasilOperator::NumLte, None, Some(value.to_string()))
+            }
+            ConstraintExpression::SemverEq { value } => {
+                (YggdrasilOperator::SemverEq, None, Some(value.to_string()))
+            }
+            ConstraintExpression::SemverGT { value } => {
+                (YggdrasilOperator::SemverGt, None, Some(value.to_string()))
+            }
+            ConstraintExpression::SemverLT { value } => {
+                (YggdrasilOperator::SemverLt, None, Some(value.to_string()))
+            }
+            ConstraintExpression::StrContains { values } => {
+                (YggdrasilOperator::StrContains, Some(values), None)
+            }
+            ConstraintExpression::StrStartsWith { values } => {
+                (YggdrasilOperator::StrStartsWith, Some(values), None)
+            }
+            ConstraintExpression::StrEndsWith { values } => {
+                (YggdrasilOperator::StrEndsWith, Some(values), None)
+            }
+            ConstraintExpression::Unknown(_) => (YggdrasilOperator::In, Some(Vec::new()), None),
+        };
+        Some(YggdrasilConstraint {
+            context_name: constraint.context_name,
+            operator,
+            case_insensitive: constraint.case_insensitive,
+            inverted: constraint.inverted,
+            values,
+            value,
+        })
+    }
+
+    fn api_strategy_to_yggdrasil(strategy: api::Strategy) -> YggdrasilStrategy {
+        YggdrasilStrategy {
+            name: strategy.name,
+            sort_order: None,
+            segments: None,
+            constraints: strategy
+                .constraints
+                .map(|constraints| {
+                    constraints
+                        .into_iter()
+                        .filter_map(api_constraint_to_yggdrasil)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|constraints| !constraints.is_empty()),
+            parameters: strategy.parameters,
+            variants: None,
+        }
+    }
+
+    fn api_variant_to_yggdrasil(variant: api::Variant) -> YggdrasilVariant {
+        let payload = variant.payload.and_then(|payload| {
+            let payload_type = payload.get("type").cloned();
+            let value = payload.get("value").cloned();
+            match (payload_type, value) {
+                (Some(payload_type), Some(value)) => Some(YggdrasilPayload {
+                    payload_type,
+                    value,
+                }),
+                _ => None,
+            }
+        });
+
+        YggdrasilVariant {
+            name: variant.name,
+            weight: i32::from(variant.weight),
+            weight_type: None,
+            stickiness: None,
+            payload,
+            overrides: variant.overrides.map(|overrides| {
+                overrides
+                    .into_iter()
+                    .map(|override_value| YggdrasilOverride {
+                        context_name: override_value.context_name,
+                        values: override_value.values,
+                    })
+                    .collect()
+            }),
+        }
+    }
+
+    fn client_feature_to_yggdrasil(feature: Feature) -> ClientFeature {
+        ClientFeature {
+            name: feature.name,
+            feature_type: None,
+            description: feature.description,
+            created_at: feature.created_at,
+            last_seen_at: None,
+            enabled: feature.enabled,
+            stale: None,
+            impression_data: None,
+            project: None,
+            strategies: Some(
+                feature
+                    .strategies
+                    .into_iter()
+                    .map(api_strategy_to_yggdrasil)
+                    .collect(),
+            ),
+            variants: feature
+                .variants
+                .map(|variants| variants.into_iter().map(api_variant_to_yggdrasil).collect()),
+            dependencies: None,
+        }
+    }
+
+    fn api_features_to_yggdrasil(features: Features) -> YggdrasilClientFeatures {
+        YggdrasilClientFeatures {
+            version: features.version.into(),
+            features: features
+                .features
+                .into_iter()
+                .map(client_feature_to_yggdrasil)
+                .collect(),
+            segments: None,
+            query: None,
+            meta: None,
+        }
     }
 }
