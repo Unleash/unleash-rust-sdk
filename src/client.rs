@@ -15,6 +15,7 @@ use futures_timer::Delay;
 use log::{debug, trace, warn};
 use unleash_types::client_features::ClientFeatures as YggdrasilClientFeatures;
 
+use unleash_yggdrasil::state::{EnrichedContext, PropertiesRef};
 use unleash_yggdrasil::{EngineState, UpdateMessage};
 use uuid::Uuid;
 
@@ -145,11 +146,6 @@ impl Default for ClientBuilder {
     }
 }
 
-// ----------------- FeatureKey (new)
-//
-// Replaces serde_plain enum<->string mapping for typed toggle keys.
-// Users implement this for their enum.
-// Keep it tiny: “given a key, what is the server toggle name?”
 pub trait FeatureKey: Copy + Debug + 'static {
     fn name(self) -> &'static str;
 }
@@ -159,7 +155,6 @@ where
     F: FeatureKey,
 {
     start: chrono::DateTime<chrono::Utc>,
-    known_features: HashSet<String>,
     engine_state: Arc<Mutex<EngineState>>,
     // Use a phantom marker to tie this struct to the feature enum type - gives us nice compiler ergonomics
     _feature_type: PhantomData<fn() -> F>,
@@ -210,38 +205,8 @@ where
     ///
     /// The key used to hash is the first of the username, sessionid, the host
     /// address, or a random string per call to get_variant.
-    pub fn get_variant(&self, feature: F, context: &Context) -> Variant {
-        trace!("get_variant: feature {feature:?} context {context:?}");
-
-        let cache = self.cached_state();
-        let cache = match cache.as_ref() {
-            None => {
-                trace!("get_variant: feature {feature:?} no cached state");
-                return Variant::disabled();
-            }
-            Some(cache) => cache,
-        };
-
-        let feature_name = feature.name();
-
-        // Optional fast path: if you keep known_features.
-        if !cache.known_features.contains(feature_name) {
-            let engine = cache.engine_state.lock().unwrap();
-            engine.count_toggle(feature_name, false);
-            engine.count_variant(feature_name, "disabled");
-            return Variant::disabled();
-        }
-
-        let ygg_context = context.to_yggdrasil_context();
-        let engine = cache.engine_state.lock().unwrap();
-
-        let enabled = engine.is_enabled(feature_name, &ygg_context, &None);
-        engine.count_toggle(feature_name, enabled);
-
-        let variant = engine.get_variant(feature_name, &ygg_context, &None);
-        engine.count_variant(feature_name, variant.name.as_str());
-
-        Variant::from_yggdrasil(variant)
+    pub fn get_variant(&self, feature: F, ctx: &Context) -> Variant {
+        self.get_variant_str(feature.name(), ctx)
     }
 
     /// Determine what variant (if any) of the feature the given context is
@@ -251,8 +216,8 @@ where
     ///
     /// The key used to hash is the first of the username, sessionid, the host
     /// address, or a random string per call to get_variant.
-    pub fn get_variant_str(&self, feature_name: &str, context: &Context) -> Variant {
-        trace!("get_variant_Str: feature {feature_name} context {context:?}");
+    pub fn get_variant_str(&self, feature_name: &str, ctx: &Context) -> Variant {
+        trace!("get_variant_Str: feature {feature_name} context {ctx:?}");
         assert!(
             self.enable_str_features,
             "String feature lookup not enabled"
@@ -265,52 +230,71 @@ where
             }
             Some(cache) => cache,
         };
-        if !cache.known_features.contains(feature_name) {
-            let engine = cache.engine_state.lock().unwrap();
-            engine.count_toggle(feature_name, false);
-            engine.count_variant(feature_name, "disabled");
-            return Variant::disabled();
-        }
-        let ygg_context = context.to_yggdrasil_context();
+
+        // start mapping goop, this is fine for a spike but it's a bit noisy. Needs a small patch in Ygg to productionize cleanly
+        let current_time_s;
+        let remote_address_s;
+
+        let current_time_ref: Option<&str> = match ctx.current_time.as_ref() {
+            Some(dt) => {
+                current_time_s = dt.to_rfc3339();
+                Some(current_time_s.as_str())
+            }
+            None => None,
+        };
+
+        let remote_address_ref: Option<&str> = match ctx.remote_address.as_ref() {
+            Some(ip) => {
+                remote_address_s = ip.0.to_string();
+                Some(remote_address_s.as_str())
+            }
+            None => None,
+        };
+
+        let ygg_context = EnrichedContext {
+            user_id: ctx.user_id.as_deref(),
+            session_id: ctx.session_id.as_deref(),
+            environment: Some(ctx.environment.as_str()),
+            app_name: Some(ctx.app_name.as_str()),
+            current_time: current_time_ref,
+            remote_address: remote_address_ref,
+            properties: Some(PropertiesRef::Strings(&ctx.properties)),
+            external_results: None,
+            toggle_name: feature_name,
+            runtime_hostname: None,
+        };
+        // end mapping goop
+
         let engine = cache.engine_state.lock().unwrap();
-        let enabled = engine.is_enabled(feature_name, &ygg_context, &None);
-        engine.count_toggle(feature_name, enabled);
-        let variant = engine.get_variant(feature_name, &ygg_context, &None);
-        engine.count_variant(feature_name, variant.name.as_str());
-        Variant::from_yggdrasil(variant)
+        let variant = engine.check_variant(&ygg_context);
+
+        if let Some(variant) = &variant {
+            let feature_enabled = engine.check_enabled(&ygg_context).unwrap_or(false);
+            engine.count_toggle(feature_name, feature_enabled);
+            engine.count_variant(feature_name, variant.name.as_str());
+            Variant {
+                enabled: variant.enabled,
+                name: variant.name.clone(),
+                payload: variant
+                    .payload
+                    .as_ref()
+                    .map(|payload| {
+                        HashMap::from([
+                            ("type".to_string(), payload.payload_type.clone()),
+                            ("value".to_string(), payload.value.clone()),
+                        ])
+                    })
+                    .unwrap_or_default(),
+            }
+        } else {
+            // This branch executes only if the feature itself is missing
+            engine.count_variant(feature_name, "disabled");
+            Variant::disabled()
+        }
     }
 
     pub fn is_enabled(&self, feature_enum: F, context: Option<&Context>, default: bool) -> bool {
-        trace!("is_enabled: feature {feature_enum:?} default {default}, context {context:?}");
-
-        let cache = self.cached_state();
-        let cache = match cache.as_ref() {
-            None => {
-                trace!("is_enabled: feature {feature_enum:?} no cached state");
-                return false;
-            }
-            Some(cache) => cache,
-        };
-
-        let feature_name = feature_enum.name();
-
-        let enabled = if cache.known_features.contains(feature_name) {
-            let default_context = Context::default();
-            let ygg_context = context.unwrap_or(&default_context).to_yggdrasil_context();
-
-            // lock once
-            let engine = cache.engine_state.lock().unwrap();
-            let enabled = engine.is_enabled(feature_name, &ygg_context, &None);
-            engine.count_toggle(feature_name, enabled);
-            enabled
-        } else {
-            debug!("is_enabled: Unknown feature {feature_enum:?}, using default {default}");
-            let engine = cache.engine_state.lock().unwrap();
-            engine.count_toggle(feature_name, default);
-            default
-        };
-
-        enabled
+        self.is_enabled_str(feature_enum.name(), context, default)
     }
 
     pub fn is_enabled_str(
@@ -319,34 +303,61 @@ where
         context: Option<&Context>,
         default: bool,
     ) -> bool {
-        trace!("is_enabled: feature_str {feature_name:?} default {default}, context {context:?}");
-        assert!(
-            self.enable_str_features,
-            "String feature lookup not enabled"
-        );
+        trace!("is_enabled: feature {feature_name:?} default {default}, context {context:?}");
+
         let cache = self.cached_state();
         let cache = match cache.as_ref() {
-            None => return false,
+            None => {
+                trace!("is_enabled: feature {feature_name:?} no cached state");
+                return false;
+            }
             Some(cache) => cache,
         };
-        let enabled = if cache.known_features.contains(feature_name) {
-            let default_context = Context::default();
-            let ygg_context = context.unwrap_or(&default_context).to_yggdrasil_context();
-            cache
-                .engine_state
-                .lock()
-                .unwrap()
-                .is_enabled(feature_name, &ygg_context, &None)
-        } else {
-            debug!("is_enabled: Unknown feature {feature_name}, using default {default}");
-            default
+
+        let default_context = Context::default();
+        let ctx = context.unwrap_or(&default_context);
+
+        // start mapping goop, this is fine for a spike but it's a bit noisy. Needs a small patch in Ygg to productionize cleanly
+        let current_time_s;
+        let remote_address_s;
+
+        let current_time_ref: Option<&str> = match ctx.current_time.as_ref() {
+            Some(dt) => {
+                current_time_s = dt.to_rfc3339();
+                Some(current_time_s.as_str())
+            }
+            None => None,
         };
-        cache
-            .engine_state
-            .lock()
-            .unwrap()
-            .count_toggle(feature_name, enabled);
-        enabled
+
+        let remote_address_ref: Option<&str> = match ctx.remote_address.as_ref() {
+            Some(ip) => {
+                remote_address_s = ip.0.to_string();
+                Some(remote_address_s.as_str())
+            }
+            None => None,
+        };
+
+        let ygg_context = EnrichedContext {
+            user_id: ctx.user_id.as_deref(),
+            session_id: ctx.session_id.as_deref(),
+            environment: Some(ctx.environment.as_str()),
+            app_name: Some(ctx.app_name.as_str()),
+            current_time: current_time_ref,
+            remote_address: remote_address_ref,
+            properties: Some(PropertiesRef::Strings(&ctx.properties)),
+            external_results: None,
+            toggle_name: feature_name,
+            runtime_hostname: None,
+        };
+        // end mapping goop
+
+        let engine = cache.engine_state.lock().unwrap();
+        let enabled = engine.check_enabled(&ygg_context);
+        if let Some(enabled) = enabled {
+            engine.count_toggle(feature_name, enabled);
+        }
+
+        enabled.unwrap_or(default)
     }
 
     /// Memoize new features into the cached state
@@ -392,14 +403,8 @@ where
             "memoize: start with {} features",
             current_state.features.len()
         );
-        let known_features = current_state
-            .features
-            .into_iter()
-            .map(|feature| feature.name)
-            .collect();
         let new_cache = CachedState {
             start: now,
-            known_features,
             engine_state: Arc::new(Mutex::new(engine_state)),
             _feature_type: PhantomData,
         };
@@ -1044,7 +1049,6 @@ mod tests {
             }
         }
 
-
         let c = ClientBuilder::default()
             .enable_string_features()
             .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
@@ -1129,7 +1133,6 @@ mod tests {
                 }
             }
         }
-
 
         let c = ClientBuilder::default()
             .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
