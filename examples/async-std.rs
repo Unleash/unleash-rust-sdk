@@ -5,6 +5,8 @@
 //! It will query a feature called "default", report status for it, and upload a
 //! metric bucket.
 
+use unleash_api_client::client::FeatureKey;
+
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     cfg_if::cfg_if! {
         if #[cfg(feature = "reqwest")] {
@@ -19,9 +21,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         use unleash_api_client::{client, config::EnvironmentConfig};
 
         #[allow(non_camel_case_types)]
-        #[derive(Debug, Deserialize, Serialize, Enum, Clone)]
+        #[derive(Debug, Enum, Clone, Copy)]
         enum UserFeatures {
             default,
+        }
+
+        impl FeatureKey for UserFeatures {
+            fn name(self) -> &'static str {
+                match self {
+                    UserFeatures::default => "default",
+                }
+            }
         }
 
         let _ = simple_logger::SimpleLogger::new()

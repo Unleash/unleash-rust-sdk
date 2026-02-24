@@ -7,7 +7,8 @@ mod tests {
     use std::fs;
 
     use enum_map::Enum;
-    use serde::{Deserialize, Serialize};
+    use serde::Deserialize;
+    use unleash_api_client::client::FeatureKey;
     use unleash_yggdrasil::UpdateMessage;
 
     use unleash_api_client::{client, context};
@@ -115,8 +116,15 @@ mod tests {
             let suite: Suite = serde_json::from_slice(&suite_content)?;
 
             #[allow(non_camel_case_types)]
-            #[derive(Debug, Deserialize, Serialize, Enum, Clone)]
+            #[derive(Debug, Enum, Clone, Copy)]
             enum NoFeatures {}
+
+            impl FeatureKey for NoFeatures {
+                fn name(self) -> &'static str {
+                    unreachable!()
+                }
+            }
+
             let c = client::ClientBuilder::default()
                 .enable_string_features()
                 .into_client::<NoFeatures, HttpClient>(

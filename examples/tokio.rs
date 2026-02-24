@@ -14,12 +14,21 @@ use enum_map::Enum;
 use futures_timer::Delay;
 use serde::{Deserialize, Serialize};
 
-use unleash_api_client::{client, config::EnvironmentConfig};
+use unleash_api_client::{client::{self, FeatureKey}, config::EnvironmentConfig};
+
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Deserialize, Serialize, Enum, Clone)]
+#[derive(Debug, Enum, Clone, Copy)]
 enum UserFeatures {
     default,
+}
+
+impl FeatureKey for UserFeatures {
+    fn name(self) -> &'static str {
+        match self {
+            UserFeatures::default => "default",
+        }
+    }
 }
 
 #[tokio::main]
