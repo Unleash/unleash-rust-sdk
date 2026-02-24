@@ -5,7 +5,6 @@ use std::{collections::HashMap, net::IpAddr};
 
 use chrono::DateTime;
 use serde::{de, Deserialize};
-use unleash_yggdrasil::state::EnrichedContext as YggdrasilContext;
 
 // Custom IP Address newtype that can be deserialised from strings e.g. 127.0.0.1 for use with tests.
 #[derive(Debug)]

@@ -1,7 +1,6 @@
 // Copyright 2020 Cognite AS
 //! The primary interface for users of the library.
 use std::collections::hash_map::HashMap;
-use std::collections::HashSet;
 use std::default::Default;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -40,24 +39,6 @@ impl Variant {
         Self {
             name: "disabled".into(),
             ..Default::default()
-        }
-    }
-
-    fn from_yggdrasil(variant: unleash_yggdrasil::ExtendedVariantDef) -> Self {
-        let payload = variant
-            .payload
-            .map(|payload| {
-                HashMap::from([
-                    ("type".to_string(), payload.payload_type),
-                    ("value".to_string(), payload.value),
-                ])
-            })
-            .unwrap_or_default();
-
-        Self {
-            name: variant.name,
-            payload,
-            enabled: variant.enabled,
         }
     }
 }

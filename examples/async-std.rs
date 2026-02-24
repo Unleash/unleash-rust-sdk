@@ -5,8 +5,6 @@
 //! It will query a feature called "default", report status for it, and upload a
 //! metric bucket.
 
-use unleash_api_client::client::FeatureKey;
-
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     cfg_if::cfg_if! {
         if #[cfg(feature = "reqwest")] {
@@ -19,6 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         use serde::{Deserialize, Serialize};
 
         use unleash_api_client::{client, config::EnvironmentConfig};
+        use unleash_api_client::client::FeatureKey;
 
         #[allow(non_camel_case_types)]
         #[derive(Debug, Enum, Clone, Copy)]
