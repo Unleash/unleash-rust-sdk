@@ -31,6 +31,7 @@ use futures_timer::Delay;
 use serde::{Deserialize, Serialize};
 use enum_map::Enum;
 use unleash_api_client::client;
+use unleash_api_client::client::FeatureKey;
 use unleash_api_client::config::EnvironmentConfig;
 use unleash_api_client::context::Context;
 use unleash_api_client::strategy;
@@ -54,9 +55,16 @@ fn _reversed_uids<S: BuildHasher>(
     })
 }
 #[allow(non_camel_case_types)]
-#[derive(Debug, Deserialize, Serialize, Enum, Clone)]
+#[derive(Debug, Deserialize, Serialize, Enum, Clone, Copy)]
 enum UserFeatures {
     default
+}
+impl FeatureKey for UserFeatures {
+    fn name(self) -> &'static str {
+        match self {
+            UserFeatures::default => "default",
+        }
+    }
 }
 # pub
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -136,13 +144,21 @@ pub use unleash_yggdrasil::Context as YggdrasilContext;
 /// use serde::{Deserialize, Serialize};
 /// use enum_map::Enum;
 /// use unleash_api_client::prelude::*;
+/// use unleash_api_client::client::FeatureKey;
 ///
 /// let config = EnvironmentConfig::from_env()?;
 ///
 /// #[allow(non_camel_case_types)]
-/// #[derive(Debug, Deserialize, Serialize, Enum, Clone)]
+/// #[derive(Debug, Deserialize, Serialize, Enum, Clone, Copy)]
 /// enum UserFeatures {
 ///     feature
+/// }
+/// impl FeatureKey for UserFeatures {
+///     fn name(self) -> &'static str {
+///         match self {
+///             UserFeatures::feature => "feature",
+///         }
+///     }
 /// }
 ///
 /// let client = ClientBuilder::default()
