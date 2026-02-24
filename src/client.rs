@@ -206,7 +206,7 @@ where
     /// The key used to hash is the first of the username, sessionid, the host
     /// address, or a random string per call to get_variant.
     pub fn get_variant(&self, feature: F, ctx: &Context) -> Variant {
-        self.get_variant_str(feature.name(), ctx)
+        self.get_variant_impl(feature.name(), ctx)
     }
 
     /// Determine what variant (if any) of the feature the given context is
@@ -217,15 +217,19 @@ where
     /// The key used to hash is the first of the username, sessionid, the host
     /// address, or a random string per call to get_variant.
     pub fn get_variant_str(&self, feature_name: &str, ctx: &Context) -> Variant {
-        trace!("get_variant_Str: feature {feature_name} context {ctx:?}");
         assert!(
             self.enable_str_features,
             "String feature lookup not enabled"
         );
+        self.get_variant_impl(feature_name, ctx)
+    }
+
+    fn get_variant_impl(&self, feature_name: &str, ctx: &Context) -> Variant {
+        trace!("get_variant: feature {feature_name} context {ctx:?}");
         let cache = self.cached_state();
         let cache = match cache.as_ref() {
             None => {
-                trace!("get_variant_str: feature {feature_name} no cached state");
+                trace!("get_variant: feature {feature_name} no cached state");
                 return Variant::disabled();
             }
             Some(cache) => cache,
@@ -294,7 +298,7 @@ where
     }
 
     pub fn is_enabled(&self, feature_enum: F, context: Option<&Context>, default: bool) -> bool {
-        self.is_enabled_str(feature_enum.name(), context, default)
+        self.is_enabled_impl(feature_enum.name(), context, default)
     }
 
     pub fn is_enabled_str(
@@ -303,8 +307,20 @@ where
         context: Option<&Context>,
         default: bool,
     ) -> bool {
-        trace!("is_enabled: feature {feature_name:?} default {default}, context {context:?}");
+        assert!(
+            self.enable_str_features,
+            "String feature lookup not enabled"
+        );
+        self.is_enabled_impl(feature_name, context, default)
+    }
 
+    fn is_enabled_impl(
+        &self,
+        feature_name: &str,
+        context: Option<&Context>,
+        default: bool,
+    ) -> bool {
+        trace!("is_enabled: feature {feature_name:?} default {default}, context {context:?}");
         let cache = self.cached_state();
         let cache = match cache.as_ref() {
             None => {
