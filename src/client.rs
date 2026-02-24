@@ -100,7 +100,6 @@ impl ClientBuilder {
             )?,
             cached_state: ArcSwapOption::from(None),
             strategies: Mutex::new(self.strategies),
-            _feature_type: PhantomData,
         })
     }
 
@@ -162,7 +161,7 @@ where
     start: chrono::DateTime<chrono::Utc>,
     known_features: HashSet<String>,
     engine_state: Arc<Mutex<EngineState>>,
-    // Prefer fn() -> F to avoid implying ownership of an F.
+    // Use a phantom marker to tie this struct to the feature enum type - gives us nice compiler ergonomics
     _feature_type: PhantomData<fn() -> F>,
 }
 
@@ -185,8 +184,6 @@ where
     strategies: Mutex<HashMap<String, strategy::Strategy>>,
     // memoised state: feature_name: [callback, callback, ...]
     cached_state: ArcSwapOption<CachedState<F>>,
-    // If you prefer belt-and-braces: keep F “present” here too.
-    _feature_type: PhantomData<fn() -> F>,
 }
 
 impl<F, C> Client<F, C>
@@ -564,7 +561,6 @@ where
 mod tests {
     use enum_map::Enum;
     use maplit::hashmap;
-    use serde::{Deserialize, Serialize};
     use std::collections::hash_map::HashMap;
     use std::collections::hash_set::HashSet;
     use std::default::Default;

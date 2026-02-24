@@ -15,7 +15,7 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use enum_map::Enum;
 use maplit::hashmap;
 use rand::{distr::Alphanumeric, rng, Rng};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use unleash_types::client_features::ClientFeatures;
 
 use unleash_api_client::api::{Feature, Features, Strategy};
@@ -27,7 +27,7 @@ use unleash_api_client::http::HttpClient;
 // optimal vec sizing.
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Enum, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Enum, Clone, Copy, Deserialize)]
 enum UserFeatures {
     Flexible0,
     Flexible1,
@@ -451,29 +451,29 @@ fn batch(c: &mut Criterion) {
         })
     });
 
-    // group.bench_function("parallel distinct-features(enum)", |b| {
-    //     b.iter(|| {
-    //         let mut threads = vec![];
-    //         for cpu in 0..cpus {
-    //             let thread_client = client.clone();
-    //             let feature_str = format!("Flexible{cpu}");
-    //             let feature = serde_plain::from_str::<UserFeatures>(&feature_str).unwrap();
-    //             let handle = thread::spawn(move || {
-    //                 let context = Context {
-    //                     user_id: Some(random_str()),
-    //                     ..Default::default()
-    //                 };
-    //                 for _ in 0..iterations {
-    //                     thread_client.is_enabled(feature.clone(), Some(&context), false);
-    //                 }
-    //             });
-    //             threads.push(handle);
-    //         }
-    //         for thread in threads {
-    //             thread.join().unwrap();
-    //         }
-    //     })
-    // });
+    group.bench_function("parallel distinct-features(enum)", |b| {
+        b.iter(|| {
+            let mut threads = vec![];
+            for cpu in 0..cpus {
+                let thread_client = client.clone();
+                let feature_str = format!("Flexible{cpu}");
+                let feature = serde_plain::from_str::<UserFeatures>(&feature_str).unwrap();
+                let handle = thread::spawn(move || {
+                    let context = Context {
+                        user_id: Some(random_str()),
+                        ..Default::default()
+                    };
+                    for _ in 0..iterations {
+                        thread_client.is_enabled(feature.clone(), Some(&context), false);
+                    }
+                });
+                threads.push(handle);
+            }
+            for thread in threads {
+                thread.join().unwrap();
+            }
+        })
+    });
     group.bench_function("parallel distinct-features(str)", |b| {
         b.iter(|| {
             let mut threads = vec![];
@@ -496,29 +496,29 @@ fn batch(c: &mut Criterion) {
             }
         })
     });
-    // group.bench_function("parallel unknown-features(enum)", |b| {
-    //     b.iter(|| {
-    //         let mut threads = vec![];
-    //         for cpu in 0..cpus {
-    //             let thread_client = client.clone();
-    //             let feature_str = format!("Unknown{cpu}");
-    //             let feature = serde_plain::from_str::<UserFeatures>(&feature_str).unwrap();
-    //             let handle = thread::spawn(move || {
-    //                 let context = Context {
-    //                     user_id: Some(random_str()),
-    //                     ..Default::default()
-    //                 };
-    //                 for _ in 0..iterations {
-    //                     thread_client.is_enabled(feature.clone(), Some(&context), false);
-    //                 }
-    //             });
-    //             threads.push(handle);
-    //         }
-    //         for thread in threads {
-    //             thread.join().unwrap();
-    //         }
-    //     })
-    // });
+    group.bench_function("parallel unknown-features(enum)", |b| {
+        b.iter(|| {
+            let mut threads = vec![];
+            for cpu in 0..cpus {
+                let thread_client = client.clone();
+                let feature_str = format!("Unknown{cpu}");
+                let feature = serde_plain::from_str::<UserFeatures>(&feature_str).unwrap();
+                let handle = thread::spawn(move || {
+                    let context = Context {
+                        user_id: Some(random_str()),
+                        ..Default::default()
+                    };
+                    for _ in 0..iterations {
+                        thread_client.is_enabled(feature.clone(), Some(&context), false);
+                    }
+                });
+                threads.push(handle);
+            }
+            for thread in threads {
+                thread.join().unwrap();
+            }
+        })
+    });
     group.bench_function("parallel unknown-features(str)", |b| {
         b.iter(|| {
             let mut threads = vec![];
