@@ -179,23 +179,19 @@ where
     }
 
     /// Determine what variant (if any) of the feature the given context is
-    /// selected for. This is a consistent selection within a feature only
-    /// - across different features with identical variant definitions,
-    ///   different variant selection will take place.
-    ///
-    /// The key used to hash is the first of the username, sessionid, the host
-    /// address, or a random string per call to get_variant.
+    /// selected for. With default stickiness the selection is consistent
+    /// against user_id, session_id or randomly selected, in that order.
+    /// Custom stickiness is respected but if the stickiness property is not
+    /// present on the passed context, the variant will always be considered disabled.
     pub fn get_variant(&self, feature: F, ctx: &Context) -> Variant {
         self.get_variant_impl(feature.name(), ctx)
     }
 
     /// Determine what variant (if any) of the feature the given context is
-    /// selected for. This is a consistent selection within a feature only
-    /// - across different features with identical variant definitions,
-    ///   different variant selection will take place.
-    ///
-    /// The key used to hash is the first of the username, sessionid, the host
-    /// address, or a random string per call to get_variant.
+    /// selected for. With default stickiness the selection is consistent
+    /// against user_id, session_id or randomly selected, in that order.
+    /// Custom stickiness is respected but if the stickiness property is not
+    /// present on the passed context, the variant will always be considered disabled.
     pub fn get_variant_str(&self, feature_name: &str, ctx: &Context) -> Variant {
         assert!(
             self.enable_str_features,
@@ -277,10 +273,20 @@ where
         }
     }
 
+    /// Determine if the feature is enabled for the given context. With default
+    /// stickiness the selection is consistent against user_id, session_id or
+    /// randomly selected, in that order. Custom stickiness is respected but if the
+    /// stickiness property is not present on the passed context, the variant will
+    /// always be considered disabled.
     pub fn is_enabled(&self, feature_enum: F, context: Option<&Context>, default: bool) -> bool {
         self.is_enabled_impl(feature_enum.name(), context, default)
     }
 
+    /// Determine if the feature is enabled for the given context. With default
+    /// stickiness the selection is consistent against user_id, session_id or
+    /// randomly selected, in that order. Custom stickiness is respected but if the
+    /// stickiness property is not present on the passed context, the variant will
+    /// always be considered disabled.
     pub fn is_enabled_str(
         &self,
         feature_name: &str,
