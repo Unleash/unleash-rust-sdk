@@ -5,7 +5,7 @@ use std::default::Default;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use arc_swap::ArcSwapOption;
@@ -127,6 +127,14 @@ impl Default for ClientBuilder {
     }
 }
 
+#[inline]
+fn lock_engine<'a>(m: &'a Mutex<EngineState>) -> MutexGuard<'a, EngineState> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 pub trait FeatureKey: Copy + Debug + 'static {
     fn name(self) -> &'static str;
 }
@@ -245,7 +253,7 @@ where
         };
         // end mapping goop
 
-        let engine = cache.engine_state.lock().unwrap();
+        let engine = lock_engine(&cache.engine_state);
         let variant = engine.check_variant(&ygg_context);
 
         if let Some(variant) = &variant {
@@ -353,7 +361,7 @@ where
         };
         // end mapping goop
 
-        let engine = cache.engine_state.lock().unwrap();
+        let engine = lock_engine(&cache.engine_state);
         let enabled = engine.check_enabled(&ygg_context);
         if let Some(enabled) = enabled {
             engine.count_toggle(feature_name, enabled);
@@ -385,7 +393,7 @@ where
             .cached_state
             .load()
             .as_ref()
-            .map(|cached_state| cached_state.engine_state.lock().unwrap().get_state());
+            .map(|cached_state| lock_engine(&cached_state.engine_state).get_state());
 
         let mut engine_state = EngineState::default();
         if let Some(state) = prior_state {
@@ -413,7 +421,7 @@ where
         let old = self.cached_state.swap(Some(Arc::new(new_cache)));
         trace!("memoize: swapped memoized state in");
         if let Some(old) = old {
-            let mut engine_state = old.engine_state.lock().unwrap();
+            let mut engine_state = lock_engine(&old.engine_state);
             let Some(yggdrasil_metrics) = engine_state.get_metrics(now) else {
                 return Ok(None);
             };
