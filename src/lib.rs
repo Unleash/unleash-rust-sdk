@@ -55,7 +55,7 @@ fn _reversed_uids<S: BuildHasher>(
     })
 }
 #[allow(non_camel_case_types)]
-#[derive(Debug, Deserialize, Serialize, Enum, Clone, Copy)]
+#[derive(Debug, Copy)]
 enum UserFeatures {
     default
 }
@@ -149,7 +149,7 @@ pub use unleash_yggdrasil::Context as YggdrasilContext;
 /// let config = EnvironmentConfig::from_env()?;
 ///
 /// #[allow(non_camel_case_types)]
-/// #[derive(Debug, Deserialize, Serialize, Enum, Clone, Copy)]
+/// #[derive(Debug, Copy)]
 /// enum UserFeatures {
 ///     feature
 /// }
