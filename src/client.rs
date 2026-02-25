@@ -135,7 +135,6 @@ pub struct CachedState<F>
 where
     F: FeatureKey,
 {
-    start: chrono::DateTime<chrono::Utc>,
     engine_state: Arc<Mutex<EngineState>>,
     // Use a phantom marker to tie this struct to the feature enum type - gives us nice compiler ergonomics
     _feature_type: PhantomData<fn() -> F>,
@@ -401,7 +400,6 @@ where
             current_state.features.len()
         );
         let new_cache = CachedState {
-            start: now,
             engine_state: Arc::new(Mutex::new(engine_state)),
             _feature_type: PhantomData,
         };
@@ -410,13 +408,8 @@ where
         trace!("memoize: swapped memoized state in");
         if let Some(old) = old {
             let mut engine_state = old.engine_state.lock().unwrap();
-            let yggdrasil_metrics = match engine_state.get_metrics(now) {
-                Some(bucket) => bucket,
-                None => unleash_types::client_metrics::MetricBucket {
-                    start: old.start,
-                    stop: now,
-                    toggles: HashMap::new(),
-                },
+            let Some(yggdrasil_metrics) = engine_state.get_metrics(now) else {
+                return Ok(None);
             };
             let bucket = MetricsBucket {
                 start: yggdrasil_metrics.start,
