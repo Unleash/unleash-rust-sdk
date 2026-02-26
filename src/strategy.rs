@@ -12,6 +12,8 @@ use log::{trace, warn};
 use murmur3::murmur3_32;
 use rand::Rng;
 use semver::Version;
+use unleash_types::client_features::ClientFeature;
+use unleash_yggdrasil::{UpdateMessage, KNOWN_STRATEGIES};
 
 use crate::api::{Constraint, ConstraintExpression};
 use crate::context::Context;
@@ -43,6 +45,70 @@ impl Clone for Box<dyn Evaluator + Send + Sync + 'static> {
 /// <https://docs.getunleash.io/user_guide/activation_strategy#standard>
 pub fn default<S: BuildHasher>(_: Option<HashMap<String, String, S>>) -> Evaluate {
     Box::new(|_: &Context| -> bool { true })
+}
+
+fn extract_features(update: &UpdateMessage) -> Vec<&ClientFeature> {
+    match update {
+        UpdateMessage::FullResponse(features) => features.features.iter().collect(),
+        UpdateMessage::PartialUpdate(delta) => {
+            let mut all_features = vec![];
+            for event in &delta.events {
+                match event {
+                    unleash_types::client_features::DeltaEvent::Hydration { features, .. } => {
+                        all_features.extend(features.iter());
+                    }
+                    unleash_types::client_features::DeltaEvent::FeatureUpdated {
+                        feature, ..
+                    } => all_features.push(feature),
+                    unleash_types::client_features::DeltaEvent::FeatureRemoved {
+                        feature_name,
+                        ..
+                    } => {
+                        all_features.retain(|f| f.name != *feature_name);
+                    }
+                    _ => {}
+                }
+            }
+            return all_features;
+        }
+    }
+}
+
+pub(crate) fn compile_custom_strategies_for_state(
+    update: &UpdateMessage,
+    registry: &HashMap<String, Strategy>,
+) -> HashMap<String, Vec<Evaluate>> {
+    let mut all_custom_strategies = HashMap::new();
+
+    for feature in extract_features(update) {
+        let mut feature_strategies = Vec::new();
+
+        let Some(strategies) = feature.strategies.as_ref() else {
+            continue;
+        };
+
+        for strategy in strategies {
+            if KNOWN_STRATEGIES.contains(&strategy.name.as_str()) {
+                continue;
+            }
+
+            if let Some(strategy_factory) = registry.get(&strategy.name) {
+                let eval = strategy_factory(strategy.parameters.clone());
+                feature_strategies.push(eval);
+            } else {
+                warn!(
+                    "Strategy '{}' required by feature '{}' is not registered, this strategy will be ignored for evaluation",
+                    strategy.name, feature.name
+                );
+            }
+        }
+
+        if !feature_strategies.is_empty() {
+            all_custom_strategies.insert(feature.name.clone(), feature_strategies);
+        }
+    }
+
+    all_custom_strategies
 }
 
 /// <https://docs.getunleash.io/user_guide/activation_strategy#userids>

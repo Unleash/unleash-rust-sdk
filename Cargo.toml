@@ -43,8 +43,8 @@ rustversion = "1.0.7"
 semver = { version = "1.0.26", features = ["serde"] }
 serde_json = "1.0.68"
 serde_plain = "1.0.0"
-unleash-types = "=0.15.21"
-unleash-yggdrasil = { version = "0.20.2", features = ["hostname"] }
+unleash-types = "=0.15.22"
+unleash-yggdrasil = { version = "0.21.0", features = ["hostname"] }
 uuid = { version = "1.11.0", features = ["v4"] }
 
 [dependencies.chrono]

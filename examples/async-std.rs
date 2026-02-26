@@ -14,7 +14,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         use async_std::task;
         use enum_map::Enum;
         use futures_timer::Delay;
-        use serde::{Deserialize, Serialize};
 
         use unleash_api_client::{client, config::EnvironmentConfig};
         use unleash_api_client::client::FeatureKey;

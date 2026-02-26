@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use enum_map::Enum;
 use futures_timer::Delay;
-use serde::{Deserialize, Serialize};
 
 use unleash_api_client::{client::{self, FeatureKey}, config::EnvironmentConfig};
 
