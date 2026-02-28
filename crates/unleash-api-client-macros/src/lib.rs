@@ -3,9 +3,10 @@ use std::collections::HashSet;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::Parser;
-use syn::LitStr;
+use syn::punctuated::Punctuated;
 use syn::{
-    parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Fields, Lit, Meta, Token,
+    parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Fields, Lit, LitStr, Meta,
+    Token,
 };
 
 /// Derive `FeatureKey` for a unit enum.
@@ -46,7 +47,7 @@ pub fn derive_feature_key(input: TokenStream) -> TokenStream {
         // just use the variant name directly as the feature name
         let name = match parse_feature_name(&variant.attrs) {
             Ok(Some(lit)) => lit,
-            Ok(None) => syn::LitStr::new(&v_ident.to_string(), v_ident.span()),
+            Ok(None) => LitStr::new(&v_ident.to_string(), v_ident.span()),
             Err(e) => return e.to_compile_error().into(),
         };
 
@@ -106,7 +107,7 @@ fn parse_feature_name(attrs: &[Attribute]) -> Result<Option<LitStr>, syn::Error>
             ));
         };
 
-        let parser = syn::punctuated::Punctuated::<Lit, Token![,]>::parse_terminated;
+        let parser = Punctuated::<Lit, Token![,]>::parse_terminated;
         let args = parser.parse2(meta_list.tokens.clone())?;
 
         if args.len() != 1 {
