@@ -1,0 +1,5 @@
+error: duplicate feature name: `a`
+  --> tests/ui/fail/same_name.rs:11:20
+   |
+11 |     #[feature_name("a")]
+   |                    ^^^

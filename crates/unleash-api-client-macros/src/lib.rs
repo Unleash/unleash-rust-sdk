@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::Parser;
@@ -15,6 +17,7 @@ use syn::{
 pub fn derive_feature_key(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let enum_ident = &input.ident;
+    let mut seen = HashSet::new();
 
     let Data::Enum(data_enum) = &input.data else {
         return syn::Error::new(input.span(), "FeatureKey can only be derived for enums")
@@ -46,6 +49,17 @@ pub fn derive_feature_key(input: TokenStream) -> TokenStream {
             Ok(None) => syn::LitStr::new(&v_ident.to_string(), v_ident.span()),
             Err(e) => return e.to_compile_error().into(),
         };
+
+        // sanity check - you can't have two members that point to the same feature
+        // don't see a reason to support this and I think it's going to make someone unhappy
+        if !seen.insert(name.value()) {
+            return syn::Error::new(
+                name.span(),
+                format!("duplicate feature name: `{}`", name.value()),
+            )
+            .to_compile_error()
+            .into();
+        }
 
         arms.push(quote! { #enum_ident::#v_ident => #name });
     }

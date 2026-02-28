@@ -1,0 +1,14 @@
+use unleash_api_client_macros::FeatureKey;
+
+trait FeatureKey: Copy + core::fmt::Debug + 'static {
+    fn name(self) -> &'static str;
+}
+
+#[derive(Copy, Clone, Debug, FeatureKey)]
+enum Features {
+    FeatureA,
+    #[feature_name("FeatureA")]
+    AlsoFeatureA,
+}
+
+fn main() {}
