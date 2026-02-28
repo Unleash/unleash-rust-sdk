@@ -1,0 +1,5 @@
+error: expected #[feature_name("…")]
+ --> tests/ui/fail/wrong_form.rs:9:5
+  |
+9 |     #[feature_name = "a"]
+  |     ^

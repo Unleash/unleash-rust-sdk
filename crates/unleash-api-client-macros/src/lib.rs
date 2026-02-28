@@ -31,7 +31,7 @@ pub fn derive_feature_key(input: TokenStream) -> TokenStream {
         if !matches!(variant.fields, Fields::Unit) {
             return syn::Error::new(
                 variant.span(),
-                "FeatureKey only supports unit enum variants (no fields)",
+                "FeatureKey only supports unit enum variants",
             )
             .to_compile_error()
             .into();

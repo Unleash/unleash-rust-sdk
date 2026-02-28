@@ -1,0 +1,5 @@
+error: duplicate #[feature_name(...)] attribute
+  --> tests/ui/fail/duplicated_attrs.rs:10:5
+   |
+10 |     #[feature_name("b")]
+   |     ^
