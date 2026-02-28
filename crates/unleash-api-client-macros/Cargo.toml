@@ -1,0 +1,14 @@
+[package]
+name = "unleash-api-client-macros"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+description = "Proc macros for unleash-api-client"
+license = "Apache-2.0"
+repository = "https://github.com/Unleash/unleash-rust-sdk/"
+homepage = "https://github.com/Unleash/unleash-rust-sdk/"
+
+[lib]
+proc-macro = true
+
+[dependencies]
