@@ -1,5 +1,6 @@
 [package]
 name = "unleash-api-client-macros"
+authors = ["Simon Hornby <simon@getunleash.io>"]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.74"
@@ -12,3 +13,6 @@ homepage = "https://github.com/Unleash/unleash-rust-sdk/"
 proc-macro = true
 
 [dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
