@@ -366,7 +366,7 @@ where
             current_time: current_time_ref,
             remote_address: remote_address_ref,
             properties: Some(PropertiesRef::Strings(&ctx.properties)),
-            external_results: external_results,
+            external_results,
             toggle_name: feature_name,
             runtime_hostname: None,
         };
@@ -432,7 +432,7 @@ where
         let new_cache = CachedState {
             engine_state: Arc::new(Mutex::new(engine_state)),
             _feature_type: PhantomData,
-            memoized_custom_strategies: memoized_custom_strategies,
+            memoized_custom_strategies,
         };
         // Now we have the new cache compiled, swap it in.
         let old = self.cached_state.swap(Some(Arc::new(new_cache)));

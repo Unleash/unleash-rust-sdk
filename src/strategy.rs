@@ -69,7 +69,7 @@ fn extract_features(update: &UpdateMessage) -> Vec<&ClientFeature> {
                     _ => {}
                 }
             }
-            return all_features;
+            all_features
         }
     }
 }
