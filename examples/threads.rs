@@ -11,14 +11,16 @@ use std::time::Duration;
 
 use enum_map::Enum;
 
-use unleash_api_client::{client::{self, FeatureKey}, config::EnvironmentConfig};
+use unleash_api_client::{
+    client::{self, FeatureKey},
+    config::EnvironmentConfig,
+};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Enum, Clone, Copy)]
 enum UserFeatures {
     default,
 }
-
 
 impl FeatureKey for UserFeatures {
     fn name(self) -> &'static str {
@@ -27,7 +29,6 @@ impl FeatureKey for UserFeatures {
         }
     }
 }
-
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     cfg_if::cfg_if! {

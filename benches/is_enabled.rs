@@ -418,7 +418,7 @@ fn batch(c: &mut Criterion) {
                         ..Default::default()
                     };
                     for _ in 0..iterations {
-                        thread_client.is_enabled(feature.clone(), Some(&context), false);
+                        thread_client.is_enabled(feature, Some(&context), false);
                     }
                 });
                 threads.push(handle);
@@ -464,7 +464,7 @@ fn batch(c: &mut Criterion) {
                         ..Default::default()
                     };
                     for _ in 0..iterations {
-                        thread_client.is_enabled(feature.clone(), Some(&context), false);
+                        thread_client.is_enabled(feature, Some(&context), false);
                     }
                 });
                 threads.push(handle);
@@ -509,7 +509,7 @@ fn batch(c: &mut Criterion) {
                         ..Default::default()
                     };
                     for _ in 0..iterations {
-                        thread_client.is_enabled(feature.clone(), Some(&context), false);
+                        thread_client.is_enabled(feature, Some(&context), false);
                     }
                 });
                 threads.push(handle);
