@@ -43,7 +43,7 @@ pub fn derive_feature_key(input: TokenStream) -> TokenStream {
 
         let v_ident = &variant.ident;
 
-        // grab the the user defined attribute or, if that doesn't exist, we'll
+        // grab the user defined attribute or, if that doesn't exist, we'll
         // just use the variant name directly as the feature name
         let name = match parse_feature_name(&variant.attrs) {
             Ok(Some(lit)) => lit,
