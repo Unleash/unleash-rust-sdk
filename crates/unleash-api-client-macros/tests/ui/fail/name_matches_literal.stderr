@@ -1,0 +1,5 @@
+error: duplicate feature name: `FeatureA`
+  --> tests/ui/fail/name_matches_literal.rs:10:20
+   |
+10 |     #[feature_name("FeatureA")]
+   |                    ^^^^^^^^^^

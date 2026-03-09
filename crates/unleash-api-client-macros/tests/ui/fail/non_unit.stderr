@@ -1,0 +1,5 @@
+error: FeatureKey only supports unit enum variants
+ --> tests/ui/fail/non_unit.rs:9:5
+  |
+9 |     FeatureA(u32),
+  |     ^^^^^^^^

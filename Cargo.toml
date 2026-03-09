@@ -2,7 +2,9 @@
 resolver = "2"
 members = [
   "crates/unleash-api-client",
+  "crates/unleash-api-client-macros",
 ]
 default-members = [
   "crates/unleash-api-client",
+  "crates/unleash-api-client-macros",
 ]

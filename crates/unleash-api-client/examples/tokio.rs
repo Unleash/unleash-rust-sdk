@@ -10,24 +10,16 @@ cfg_if::cfg_if! {
 
 use std::time::Duration;
 
-use enum_map::Enum;
 use futures_timer::Delay;
 
 use unleash_api_client::{client::{self, FeatureKey}, config::EnvironmentConfig};
+use unleash_api_client_macros::FeatureKey;
 
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Enum, Clone, Copy)]
+#[derive(Debug, Clone, Copy, FeatureKey)]
 enum UserFeatures {
     default,
-}
-
-impl FeatureKey for UserFeatures {
-    fn name(self) -> &'static str {
-        match self {
-            UserFeatures::default => "default",
-        }
-    }
 }
 
 #[tokio::main]

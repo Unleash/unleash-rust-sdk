@@ -13,7 +13,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Publish unleash-api-client-macros
+        run: cargo publish --manifest-path crates/unleash-api-client-macros/Cargo.toml
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Publish unleash-api-client
-        run: cargo publish --manifest-path crates/unleash-api-client/Cargo.toml
+        run: |
+          for i in 1 2 3 4 5; do
+            cargo publish --manifest-path crates/unleash-api-client/Cargo.toml && exit 0
+            sleep 30
+          done
+          exit 1
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
