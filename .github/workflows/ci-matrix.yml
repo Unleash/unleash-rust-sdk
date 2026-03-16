@@ -29,12 +29,12 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --no-default-features --features async-std,strict,${{ matrix.features }}
+          args: -p unleash-api-client --no-default-features --features async-std,strict,${{ matrix.features }}
 
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features --features async-std,strict,${{ matrix.features }}
+          args: -p unleash-api-client --no-default-features --features async-std,strict,${{ matrix.features }}
 
   clippy:
     runs-on: ubuntu-latest
@@ -58,13 +58,13 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls --all-targets
+          args: -p unleash-api-client --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls --all-targets
 
       - uses: actions-rs/cargo@v1
         # We test with approximately all-features to ensure that that does build
         with:
           command: test
-          args: --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls --all-targets
+          args: -p unleash-api-client --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls --all-targets
 
       - uses: actions-rs/cargo@v1
         with:
@@ -74,7 +74,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls --all-targets -- -D warnings
+          args: -p unleash-api-client --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls --all-targets -- -D warnings
 
   msrv:
     runs-on: ubuntu-latest
