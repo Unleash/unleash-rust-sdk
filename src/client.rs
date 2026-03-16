@@ -14,7 +14,7 @@ use futures_timer::Delay;
 use log::{debug, trace, warn};
 use unleash_types::client_features::ClientFeatures as YggdrasilClientFeatures;
 
-use unleash_yggdrasil::state::{EnrichedContext, PropertiesRef};
+use unleash_yggdrasil::state::{EnrichedContext, ExternalResultsRef, PropertiesRef};
 use unleash_yggdrasil::{EngineState, UpdateMessage};
 use uuid::Uuid;
 
@@ -108,23 +108,30 @@ impl ClientBuilder {
 
 impl Default for ClientBuilder {
     fn default() -> ClientBuilder {
-        let result = ClientBuilder {
+        ClientBuilder {
             disable_metric_submission: false,
             enable_str_features: false,
             interval: 15000,
             strategies: Default::default(),
-        };
-        result
-            .strategy("default", Box::new(&strategy::default))
-            .strategy("applicationHostname", Box::new(&strategy::hostname))
-            .strategy("default", Box::new(&strategy::default))
-            .strategy("gradualRolloutRandom", Box::new(&strategy::random))
-            .strategy("gradualRolloutSessionId", Box::new(&strategy::session_id))
-            .strategy("gradualRolloutUserId", Box::new(&strategy::user_id))
-            .strategy("remoteAddress", Box::new(&strategy::remote_address))
-            .strategy("userWithId", Box::new(&strategy::user_with_id))
-            .strategy("flexibleRollout", Box::new(&strategy::flexible_rollout))
+        }
     }
+}
+
+fn compute_custom_strategy_results<F: FeatureKey>(
+    cache: &CachedState<F>,
+    toggle_name: &str,
+    ctx: &Context,
+) -> Option<HashMap<String, bool>> {
+    let evals = cache.memoized_custom_strategies.get(toggle_name)?;
+    if evals.is_empty() {
+        return None;
+    }
+
+    let mut out = HashMap::with_capacity(evals.len());
+    for (i, ev) in evals.iter().enumerate() {
+        out.insert(format!("customStrategy{}", i + 1), ev(ctx));
+    }
+    Some(out)
 }
 
 #[inline]
@@ -144,6 +151,7 @@ where
     F: FeatureKey,
 {
     engine_state: Arc<Mutex<EngineState>>,
+    memoized_custom_strategies: HashMap<String, Vec<strategy::Evaluate>>,
     // Use a phantom marker to tie this struct to the feature enum type - gives us nice compiler ergonomics
     _feature_type: PhantomData<fn() -> F>,
 }
@@ -347,6 +355,9 @@ where
             None => None,
         };
 
+        let custom_results = compute_custom_strategy_results(cache, feature_name, ctx);
+        let external_results = custom_results.as_ref().map(ExternalResultsRef::Strings);
+
         let ygg_context = EnrichedContext {
             user_id: ctx.user_id.as_deref(),
             session_id: ctx.session_id.as_deref(),
@@ -355,7 +366,7 @@ where
             current_time: current_time_ref,
             remote_address: remote_address_ref,
             properties: Some(PropertiesRef::Strings(&ctx.properties)),
-            external_results: None,
+            external_results,
             toggle_name: feature_name,
             runtime_hostname: None,
         };
@@ -395,6 +406,11 @@ where
             .as_ref()
             .map(|cached_state| lock_engine(&cached_state.engine_state).get_state());
 
+        let memoized_custom_strategies = strategy::compile_custom_strategies_for_state(
+            &update_message,
+            &self.strategies.lock().unwrap(),
+        );
+
         let mut engine_state = EngineState::default();
         if let Some(state) = prior_state {
             let _ = engine_state.take_state(UpdateMessage::FullResponse(state));
@@ -416,6 +432,7 @@ where
         let new_cache = CachedState {
             engine_state: Arc::new(Mutex::new(engine_state)),
             _feature_type: PhantomData,
+            memoized_custom_strategies,
         };
         // Now we have the new cache compiled, swap it in.
         let old = self.cached_state.swap(Some(Arc::new(new_cache)));
@@ -803,71 +820,80 @@ mod tests {
         })
     }
 
-    // #[test]
-    // #[ignore = "Custom strategy integration is intentionally skipped in the first Yggdrasil pass"]
-    // fn test_custom_strategy() {
-    //     let _ = simple_logger::SimpleLogger::new()
-    //         .with_utc_timestamps()
-    //         .with_module_level("isahc::agent", log::LevelFilter::Off)
-    //         .with_module_level("tracing::span", log::LevelFilter::Off)
-    //         .with_module_level("tracing::span::active", log::LevelFilter::Off)
-    //         .init();
-    //     #[allow(non_camel_case_types)]
-    //     #[derive(Debug, Deserialize, Serialize, Enum, Clone)]
-    //     enum UserFeatures {
-    //         default,
-    //         reversed,
-    //     }
-    //     let client = ClientBuilder::default()
-    //         .strategy("reversed", Box::new(&_reversed_uids))
-    //         .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
-    //         .unwrap();
+    #[test]
+    fn test_custom_strategy() {
+        let _ = simple_logger::SimpleLogger::new()
+            .with_utc_timestamps()
+            .with_module_level("isahc::agent", log::LevelFilter::Off)
+            .with_module_level("tracing::span", log::LevelFilter::Off)
+            .with_module_level("tracing::span::active", log::LevelFilter::Off)
+            .init();
+        #[allow(non_camel_case_types)]
+        #[derive(Debug, Copy, Clone)]
+        enum UserFeatures {
+            default,
+            reversed,
+        }
 
-    //     let f = Features {
-    //         version: 1,
-    //         features: vec![
-    //             Feature {
-    //                 description: Some("default".to_string()),
-    //                 enabled: true,
-    //                 created_at: None,
-    //                 variants: None,
-    //                 name: "default".into(),
-    //                 strategies: vec![Strategy {
-    //                     name: "default".into(),
-    //                     ..Default::default()
-    //                 }],
-    //             },
-    //             Feature {
-    //                 description: Some("reversed".to_string()),
-    //                 enabled: true,
-    //                 created_at: None,
-    //                 variants: None,
-    //                 name: "reversed".into(),
-    //                 strategies: vec![Strategy {
-    //                     name: "reversed".into(),
-    //                     parameters: Some(hashmap!["userIds".into()=>"abc".into()]),
-    //                     ..Default::default()
-    //                 }],
-    //             },
-    //         ],
-    //     };
-    //     client.memoize(api_features_to_yggdrasil(f)).unwrap();
-    //     let present: Context = Context {
-    //         user_id: Some("cba".into()),
-    //         ..Default::default()
-    //     };
-    //     let missing: Context = Context {
-    //         user_id: Some("abc".into()),
-    //         ..Default::default()
-    //     };
-    //     // user cba should be present on reversed
-    //     assert!(client.is_enabled(UserFeatures::reversed, Some(&present), false));
-    //     // user abc should not
-    //     assert!(!client.is_enabled(UserFeatures::reversed, Some(&missing), false));
-    //     // adding custom strategies shouldn't disable built-in ones
-    //     // default should be enabled, no context needed
-    //     assert!(client.is_enabled(UserFeatures::default, None, false));
-    // }
+        impl FeatureKey for UserFeatures {
+            fn name(self) -> &'static str {
+                match self {
+                    UserFeatures::default => "default",
+                    UserFeatures::reversed => "reversed",
+                }
+            }
+        }
+
+        let client = ClientBuilder::default()
+            .strategy("reversed", Box::new(&_reversed_uids))
+            .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
+            .unwrap();
+
+        let f = Features {
+            version: 1,
+            features: vec![
+                Feature {
+                    description: Some("default".to_string()),
+                    enabled: true,
+                    created_at: None,
+                    variants: None,
+                    name: "default".into(),
+                    strategies: vec![Strategy {
+                        name: "default".into(),
+                        ..Default::default()
+                    }],
+                },
+                Feature {
+                    description: Some("reversed".to_string()),
+                    enabled: true,
+                    created_at: None,
+                    variants: None,
+                    name: "reversed".into(),
+                    strategies: vec![Strategy {
+                        name: "reversed".into(),
+                        parameters: Some(hashmap!["userIds".into()=>"abc".into()]),
+                        ..Default::default()
+                    }],
+                },
+            ],
+        };
+        client.memoize(api_features_to_yggdrasil(f)).unwrap();
+        let present: Context = Context {
+            user_id: Some("cba".into()),
+            ..Default::default()
+        };
+        let missing: Context = Context {
+            user_id: Some("abc".into()),
+            ..Default::default()
+        };
+        // user cba should be present on reversed
+        assert!(client.is_enabled(UserFeatures::reversed, Some(&present), false));
+        // user abc should not
+        assert!(!client.is_enabled(UserFeatures::reversed, Some(&missing), false));
+        // adding custom strategies shouldn't disable built-in ones
+        // default should be enabled, no context needed
+        assert!(client.is_enabled(UserFeatures::default, None, false));
+    }
 
     fn variant_features() -> Features {
         Features {
