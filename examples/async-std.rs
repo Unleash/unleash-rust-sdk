@@ -14,14 +14,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         use async_std::task;
         use enum_map::Enum;
         use futures_timer::Delay;
-        use serde::{Deserialize, Serialize};
 
         use unleash_api_client::{client, config::EnvironmentConfig};
+        use unleash_api_client::client::FeatureKey;
 
         #[allow(non_camel_case_types)]
-        #[derive(Debug, Deserialize, Serialize, Enum, Clone)]
+        #[derive(Debug, Enum, Clone, Copy)]
         enum UserFeatures {
             default,
+        }
+
+        impl FeatureKey for UserFeatures {
+            fn name(self) -> &'static str {
+                match self {
+                    UserFeatures::default => "default",
+                }
+            }
         }
 
         let _ = simple_logger::SimpleLogger::new()

@@ -15,10 +15,11 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use enum_map::Enum;
 use maplit::hashmap;
 use rand::{distr::Alphanumeric, rng, Rng};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use unleash_types::client_features::ClientFeatures;
 
 use unleash_api_client::api::{Feature, Features, Strategy};
-use unleash_api_client::client;
+use unleash_api_client::client::{self, FeatureKey};
 use unleash_api_client::context::Context;
 use unleash_api_client::http::HttpClient;
 
@@ -26,7 +27,7 @@ use unleash_api_client::http::HttpClient;
 // optimal vec sizing.
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Deserialize, Serialize, Enum, Clone)]
+#[derive(Debug, Enum, Clone, Copy, Deserialize)]
 enum UserFeatures {
     Flexible0,
     Flexible1,
@@ -158,6 +159,141 @@ enum UserFeatures {
     Unknown63,
 }
 
+impl FeatureKey for UserFeatures {
+    fn name(self) -> &'static str {
+        match self {
+            UserFeatures::Flexible0 => "Flexible0",
+            UserFeatures::Flexible1 => "Flexible1",
+            UserFeatures::Flexible2 => "Flexible2",
+            UserFeatures::Flexible3 => "Flexible3",
+            UserFeatures::Flexible4 => "Flexible4",
+            UserFeatures::Flexible5 => "Flexible5",
+            UserFeatures::Flexible6 => "Flexible6",
+            UserFeatures::Flexible7 => "Flexible7",
+            UserFeatures::Flexible8 => "Flexible8",
+            UserFeatures::Flexible9 => "Flexible9",
+            UserFeatures::Flexible10 => "Flexible10",
+            UserFeatures::Flexible11 => "Flexible11",
+            UserFeatures::Flexible12 => "Flexible12",
+            UserFeatures::Flexible13 => "Flexible13",
+            UserFeatures::Flexible14 => "Flexible14",
+            UserFeatures::Flexible15 => "Flexible15",
+            UserFeatures::Flexible16 => "Flexible16",
+            UserFeatures::Flexible17 => "Flexible17",
+            UserFeatures::Flexible18 => "Flexible18",
+            UserFeatures::Flexible19 => "Flexible19",
+            UserFeatures::Flexible20 => "Flexible20",
+            UserFeatures::Flexible21 => "Flexible21",
+            UserFeatures::Flexible22 => "Flexible22",
+            UserFeatures::Flexible23 => "Flexible23",
+            UserFeatures::Flexible24 => "Flexible24",
+            UserFeatures::Flexible25 => "Flexible25",
+            UserFeatures::Flexible26 => "Flexible26",
+            UserFeatures::Flexible27 => "Flexible27",
+            UserFeatures::Flexible28 => "Flexible28",
+            UserFeatures::Flexible29 => "Flexible29",
+            UserFeatures::Flexible30 => "Flexible30",
+            UserFeatures::Flexible31 => "Flexible31",
+            UserFeatures::Flexible32 => "Flexible32",
+            UserFeatures::Flexible33 => "Flexible33",
+            UserFeatures::Flexible34 => "Flexible34",
+            UserFeatures::Flexible35 => "Flexible35",
+            UserFeatures::Flexible36 => "Flexible36",
+            UserFeatures::Flexible37 => "Flexible37",
+            UserFeatures::Flexible38 => "Flexible38",
+            UserFeatures::Flexible39 => "Flexible39",
+            UserFeatures::Flexible40 => "Flexible40",
+            UserFeatures::Flexible41 => "Flexible41",
+            UserFeatures::Flexible42 => "Flexible42",
+            UserFeatures::Flexible43 => "Flexible43",
+            UserFeatures::Flexible44 => "Flexible44",
+            UserFeatures::Flexible45 => "Flexible45",
+            UserFeatures::Flexible46 => "Flexible46",
+            UserFeatures::Flexible47 => "Flexible47",
+            UserFeatures::Flexible48 => "Flexible48",
+            UserFeatures::Flexible49 => "Flexible49",
+            UserFeatures::Flexible50 => "Flexible50",
+            UserFeatures::Flexible51 => "Flexible51",
+            UserFeatures::Flexible52 => "Flexible52",
+            UserFeatures::Flexible53 => "Flexible53",
+            UserFeatures::Flexible54 => "Flexible54",
+            UserFeatures::Flexible55 => "Flexible55",
+            UserFeatures::Flexible56 => "Flexible56",
+            UserFeatures::Flexible57 => "Flexible57",
+            UserFeatures::Flexible58 => "Flexible58",
+            UserFeatures::Flexible59 => "Flexible59",
+            UserFeatures::Flexible60 => "Flexible60",
+            UserFeatures::Flexible61 => "Flexible61",
+            UserFeatures::Flexible62 => "Flexible62",
+            UserFeatures::Flexible63 => "Flexible63",
+            UserFeatures::Unknown0 => "Unknown0",
+            UserFeatures::Unknown1 => "Unknown1",
+            UserFeatures::Unknown2 => "Unknown2",
+            UserFeatures::Unknown3 => "Unknown3",
+            UserFeatures::Unknown4 => "Unknown4",
+            UserFeatures::Unknown5 => "Unknown5",
+            UserFeatures::Unknown6 => "Unknown6",
+            UserFeatures::Unknown7 => "Unknown7",
+            UserFeatures::Unknown8 => "Unknown8",
+            UserFeatures::Unknown9 => "Unknown9",
+            UserFeatures::Unknown10 => "Unknown10",
+            UserFeatures::Unknown11 => "Unknown11",
+            UserFeatures::Unknown12 => "Unknown12",
+            UserFeatures::Unknown13 => "Unknown13",
+            UserFeatures::Unknown14 => "Unknown14",
+            UserFeatures::Unknown15 => "Unknown15",
+            UserFeatures::Unknown16 => "Unknown16",
+            UserFeatures::Unknown17 => "Unknown17",
+            UserFeatures::Unknown18 => "Unknown18",
+            UserFeatures::Unknown19 => "Unknown19",
+            UserFeatures::Unknown20 => "Unknown20",
+            UserFeatures::Unknown21 => "Unknown21",
+            UserFeatures::Unknown22 => "Unknown22",
+            UserFeatures::Unknown23 => "Unknown23",
+            UserFeatures::Unknown24 => "Unknown24",
+            UserFeatures::Unknown25 => "Unknown25",
+            UserFeatures::Unknown26 => "Unknown26",
+            UserFeatures::Unknown27 => "Unknown27",
+            UserFeatures::Unknown28 => "Unknown28",
+            UserFeatures::Unknown29 => "Unknown29",
+            UserFeatures::Unknown30 => "Unknown30",
+            UserFeatures::Unknown31 => "Unknown31",
+            UserFeatures::Unknown32 => "Unknown32",
+            UserFeatures::Unknown33 => "Unknown33",
+            UserFeatures::Unknown34 => "Unknown34",
+            UserFeatures::Unknown35 => "Unknown35",
+            UserFeatures::Unknown36 => "Unknown36",
+            UserFeatures::Unknown37 => "Unknown37",
+            UserFeatures::Unknown38 => "Unknown38",
+            UserFeatures::Unknown39 => "Unknown39",
+            UserFeatures::Unknown40 => "Unknown40",
+            UserFeatures::Unknown41 => "Unknown41",
+            UserFeatures::Unknown42 => "Unknown42",
+            UserFeatures::Unknown43 => "Unknown43",
+            UserFeatures::Unknown44 => "Unknown44",
+            UserFeatures::Unknown45 => "Unknown45",
+            UserFeatures::Unknown46 => "Unknown46",
+            UserFeatures::Unknown47 => "Unknown47",
+            UserFeatures::Unknown48 => "Unknown48",
+            UserFeatures::Unknown49 => "Unknown49",
+            UserFeatures::Unknown50 => "Unknown50",
+            UserFeatures::Unknown51 => "Unknown51",
+            UserFeatures::Unknown52 => "Unknown52",
+            UserFeatures::Unknown53 => "Unknown53",
+            UserFeatures::Unknown54 => "Unknown54",
+            UserFeatures::Unknown55 => "Unknown55",
+            UserFeatures::Unknown56 => "Unknown56",
+            UserFeatures::Unknown57 => "Unknown57",
+            UserFeatures::Unknown58 => "Unknown58",
+            UserFeatures::Unknown59 => "Unknown59",
+            UserFeatures::Unknown60 => "Unknown60",
+            UserFeatures::Unknown61 => "Unknown61",
+            UserFeatures::Unknown62 => "Unknown62",
+            UserFeatures::Unknown63 => "Unknown63",
+        }
+    }
+}
+
 fn client<C>(count: usize) -> client::Client<UserFeatures, C>
 where
     C: HttpClient + Default,
@@ -202,7 +338,9 @@ where
         version: 1,
         features,
     };
-    client.memoize(f.features).unwrap();
+    let client_features: ClientFeatures =
+        serde_json::from_value(serde_json::to_value(f).unwrap()).unwrap();
+    client.memoize(client_features).unwrap();
     client
 }
 
@@ -280,7 +418,7 @@ fn batch(c: &mut Criterion) {
                         ..Default::default()
                     };
                     for _ in 0..iterations {
-                        thread_client.is_enabled(feature.clone(), Some(&context), false);
+                        thread_client.is_enabled(feature, Some(&context), false);
                     }
                 });
                 threads.push(handle);
@@ -326,7 +464,7 @@ fn batch(c: &mut Criterion) {
                         ..Default::default()
                     };
                     for _ in 0..iterations {
-                        thread_client.is_enabled(feature.clone(), Some(&context), false);
+                        thread_client.is_enabled(feature, Some(&context), false);
                     }
                 });
                 threads.push(handle);
@@ -371,7 +509,7 @@ fn batch(c: &mut Criterion) {
                         ..Default::default()
                     };
                     for _ in 0..iterations {
-                        thread_client.is_enabled(feature.clone(), Some(&context), false);
+                        thread_client.is_enabled(feature, Some(&context), false);
                     }
                 });
                 threads.push(handle);

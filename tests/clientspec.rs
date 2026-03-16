@@ -7,9 +7,11 @@ mod tests {
     use std::fs;
 
     use enum_map::Enum;
-    use serde::{Deserialize, Serialize};
+    use serde::Deserialize;
+    use unleash_api_client::client::FeatureKey;
+    use unleash_yggdrasil::UpdateMessage;
 
-    use unleash_api_client::{api, client, context};
+    use unleash_api_client::{client, context};
 
     #[derive(Debug, Deserialize)]
     struct Test {
@@ -75,7 +77,7 @@ mod tests {
     struct Suite {
         #[serde(rename = "name")]
         _name: String,
-        state: api::Features,
+        state: UpdateMessage,
         #[serde(flatten)]
         tests: Tests,
     }
@@ -114,8 +116,15 @@ mod tests {
             let suite: Suite = serde_json::from_slice(&suite_content)?;
 
             #[allow(non_camel_case_types)]
-            #[derive(Debug, Deserialize, Serialize, Enum, Clone)]
+            #[derive(Debug, Enum, Clone, Copy)]
             enum NoFeatures {}
+
+            impl FeatureKey for NoFeatures {
+                fn name(self) -> &'static str {
+                    unreachable!()
+                }
+            }
+
             let c = client::ClientBuilder::default()
                 .enable_string_features()
                 .into_client::<NoFeatures, HttpClient>(
@@ -125,8 +134,8 @@ mod tests {
                     None,
                 )
                 .unwrap();
-            log::info!("Using features {:?}", &suite.state.features);
-            c.memoize(suite.state.features).unwrap();
+            log::info!("Using update message");
+            c.memoize_update_message(suite.state).unwrap();
 
             match suite.tests {
                 Tests::Tests(tests) => {
