@@ -11,14 +11,13 @@ surf or reqwest support is built in, or any async HTTP client can be provided by
 the user if they implement the thin trait used to abstract over the actual
 client.
 
-Examples with async-std (feature 'surf-client') and tokio (feature
-'reqwest-client') are in the examples/ in the source tree. See the API docs for
-more feature information.
+Examples with async-std and tokio are in `crates/unleash-api-client/examples/`
+in the source tree. See the API docs for more feature information.
 
 To use it in a sync program, run an async executor and `block_on()` the relevant
 calls. As the client specification requires sending background metrics to the
 API, you will need to arrange to call the `poll_for_updates` method from a
-thread as demonstrated in `examples/theads.rs`
+thread as demonstrated in `crates/unleash-api-client/examples/threads.rs`
 
 The unleash defined strategies are included, to support custom strategies
 use the `ClientBuilder` and call the `strategy` method to register your custom
@@ -104,7 +103,7 @@ Then run the test suite:
 UNLEASH_API_URL=http://127.0.0.1:4242/api \
   UNLEASH_APP_NAME=fred UNLEASH_INSTANCE_ID=test \
   UNLEASH_CLIENT_SECRET="<tokenvalue>" \
-  cargo test --features functional  -- --nocapture
+  cargo test -p unleash-api-client --features "functional reqwest-client" -- --nocapture
 ```
 
 or similar. The functional test suite looks for a manually setup set of

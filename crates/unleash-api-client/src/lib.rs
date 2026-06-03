@@ -146,6 +146,8 @@ pub use unleash_yggdrasil::Context as YggdrasilContext;
 /// use unleash_api_client::prelude::*;
 /// use unleash_api_client::client::FeatureKey;
 ///
+/// # #[cfg(any(feature = "reqwest", feature = "reqwest-11"))]
+/// # {
 /// let config = EnvironmentConfig::from_env()?;
 ///
 /// #[allow(non_camel_case_types)]
@@ -168,6 +170,7 @@ pub use unleash_yggdrasil::Context as YggdrasilContext;
 ///         &config.instance_id,
 ///         config.secret,
 ///         )?;
+/// # }
 /// # Ok::<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>>(())
 /// ```
 pub mod prelude {

@@ -609,13 +609,52 @@ mod tests {
 
     use unleash_types::client_features::ClientFeatures as YggdrasilClientFeatures;
 
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "reqwest")] {
-            use reqwest::Client as HttpClient;
-        } else if #[cfg(feature = "reqwest-11")] {
-            use reqwest_11::Client as HttpClient;
-        } else {
-            compile_error!("Cannot run test suite without a client enabled");
+    #[derive(Default)]
+    struct HttpClient;
+
+    #[derive(Debug)]
+    struct HttpClientError;
+
+    impl std::fmt::Display for HttpClientError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("test HTTP client error")
+        }
+    }
+
+    impl std::error::Error for HttpClientError {}
+
+    #[async_trait::async_trait]
+    impl crate::http::HttpClient for HttpClient {
+        type Error = HttpClientError;
+        type HeaderName = &'static str;
+        type RequestBuilder = ();
+
+        fn build_header(name: &'static str) -> Result<Self::HeaderName, Self::Error> {
+            Ok(name)
+        }
+
+        fn get(&self, _uri: &str) -> Self::RequestBuilder {}
+
+        fn post(&self, _uri: &str) -> Self::RequestBuilder {}
+
+        fn header(
+            _builder: Self::RequestBuilder,
+            _key: &Self::HeaderName,
+            _value: &str,
+        ) -> Self::RequestBuilder {
+        }
+
+        async fn get_json<T: serde::de::DeserializeOwned>(
+            _req: Self::RequestBuilder,
+        ) -> Result<T, Self::Error> {
+            Err(HttpClientError)
+        }
+
+        async fn post_json<T: serde::Serialize + Sync>(
+            _req: Self::RequestBuilder,
+            _content: &T,
+        ) -> Result<bool, Self::Error> {
+            Err(HttpClientError)
         }
     }
 

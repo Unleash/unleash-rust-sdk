@@ -5,7 +5,7 @@ authors = ["Robert Collins <robert.collins@cognite.com>"]
 edition = "2021"
 rust-version = "1.83"
 description = "An API client for https://www.getunleash.io/"
-readme = "README.md"
+readme = "../../README.md"
 homepage = "https://github.com/Unleash/unleash-rust-sdk/"
 repository = "https://github.com/Unleash/unleash-rust-sdk/"
 license = "Apache-2.0"
@@ -21,6 +21,26 @@ bench = false
 name = "dump-features"
 path = "src/bin/dump-features.rs"
 required-features = ["async-std", "reqwest-client"]
+
+[[example]]
+name = "async-std"
+required-features = ["async-std", "reqwest-client"]
+
+[[example]]
+name = "threads"
+required-features = ["reqwest-client"]
+
+[[example]]
+name = "tokio"
+required-features = ["reqwest-client"]
+
+[[test]]
+name = "clientspec"
+required-features = ["reqwest-client"]
+
+[[test]]
+name = "functional"
+required-features = ["functional", "reqwest-client"]
 
 [[bench]]
 harness = false
