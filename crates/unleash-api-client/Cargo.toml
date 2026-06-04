@@ -3,7 +3,7 @@ name = "unleash-api-client"
 version = "0.15.0"
 authors = ["Robert Collins <robert.collins@cognite.com>"]
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.83"
 description = "An API client for https://www.getunleash.io/"
 readme = "../../README.md"
 homepage = "https://github.com/Unleash/unleash-rust-sdk/"
@@ -21,6 +21,26 @@ bench = false
 name = "dump-features"
 path = "src/bin/dump-features.rs"
 required-features = ["async-std", "reqwest-client"]
+
+[[example]]
+name = "async-std"
+required-features = ["async-std", "reqwest-client"]
+
+[[example]]
+name = "threads"
+required-features = ["reqwest-client"]
+
+[[example]]
+name = "tokio"
+required-features = ["reqwest-client"]
+
+[[test]]
+name = "clientspec"
+required-features = ["reqwest-client"]
+
+[[test]]
+name = "functional"
+required-features = ["functional", "reqwest-client"]
 
 [[bench]]
 harness = false
@@ -44,8 +64,8 @@ semver = { version = "1.0.26", features = ["serde"] }
 serde_json = "1.0.68"
 serde_plain = "1.0.0"
 unleash-api-client-macros = { version = "0.1.0", path = "../unleash-api-client-macros" }
-unleash-types = "=0.15.22"
-unleash-yggdrasil = { version = "0.21.0", features = ["hostname"] }
+unleash-types = "=0.16.1"
+unleash-yggdrasil = { version = "0.21.1", features = ["hostname"] }
 uuid = { version = "1.11.0", features = ["v4"] }
 
 [dependencies.chrono]

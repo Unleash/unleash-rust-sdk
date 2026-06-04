@@ -3,8 +3,8 @@
 //! Runs the Unleash provided client conformance tests.
 
 mod tests {
-    use std::env;
     use std::fs;
+    use std::path::PathBuf;
 
     use enum_map::Enum;
     use serde::Deserialize;
@@ -100,12 +100,8 @@ mod tests {
             .with_module_level("tracing::span", log::LevelFilter::Off)
             .with_module_level("tracing::span::active", log::LevelFilter::Off)
             .init();
-        let current_exe_path = env::current_exe().unwrap();
-        let mut exe_dir = current_exe_path.parent().unwrap();
-        if exe_dir.ends_with("deps") {
-            exe_dir = exe_dir.parent().unwrap();
-        }
-        let spec_dir = exe_dir.join("../../client-specification/specifications/");
+        let spec_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../client-specification/specifications/");
 
         log::info!("Loading tests from {}", spec_dir.display());
         let index = fs::read(spec_dir.join("index.json"))?;
