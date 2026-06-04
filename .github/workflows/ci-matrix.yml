@@ -36,6 +36,20 @@ jobs:
           command: test
           args: -p unleash-api-client --no-default-features --features async-std,strict,${{ matrix.features }}
 
+  macro-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.95.0
+          override: true
+
       - uses: actions-rs/cargo@v1
         with:
           command: test
