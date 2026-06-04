@@ -17,15 +17,14 @@ pub(crate) fn get_sdk_version() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use regex::Regex;
+    use semver::Version;
 
     #[test]
     fn test_get_sdk_version_with_version_set() {
         let version_output = get_sdk_version();
-        let version_regex = Regex::new(r"^unleash-rust-sdk:\d+\.\d+\.\d+$").unwrap();
-        assert!(
-            version_regex.is_match(version_output),
-            "Version output did not match expected format: {version_output}"
-        );
+        let sdk_version = version_output.strip_prefix("unleash-rust-sdk:").unwrap();
+        Version::parse(sdk_version).unwrap_or_else(|_| {
+            panic!("Version output did not match expected format: {sdk_version}")
+        });
     }
 }

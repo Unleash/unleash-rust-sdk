@@ -132,7 +132,7 @@ where
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use regex::Regex;
+    use semver::Version;
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::{Arc, RwLock};
@@ -206,12 +206,11 @@ mod tests {
         assert_eq!(headers.get("unleash-interval").unwrap(), "15");
         assert_eq!(headers.get("authorization").unwrap(), "auth_token");
 
-        let version_regex = Regex::new(r"^unleash-rust-sdk:\d+\.\d+\.\d+$").unwrap();
         let sdk_version = headers.get("unleash-sdk").unwrap();
-        assert!(
-            version_regex.is_match(sdk_version),
-            "Version output did not match expected format: {sdk_version}"
-        );
+        let sdk_version = sdk_version.strip_prefix("unleash-rust-sdk:").unwrap();
+        Version::parse(sdk_version).unwrap_or_else(|_| {
+            panic!("Version output did not match expected format: {sdk_version}")
+        });
 
         let connection_id = headers.get("unleash-connection-id").unwrap();
         assert!(
