@@ -9,7 +9,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use unleash_api_client::{client::{self, FeatureKey}, config::EnvironmentConfig};
+use unleash_api_client::{
+    client::{self, FeatureKey},
+    config::EnvironmentConfig,
+};
 use unleash_api_client_macros::FeatureKey;
 
 #[allow(non_camel_case_types)]
