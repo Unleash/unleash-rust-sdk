@@ -80,9 +80,6 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace --locked
 
-      - name: Dry-run publish unleash-api-client-macros
-        run: cargo publish --manifest-path crates/unleash-api-client-macros/Cargo.toml --locked --dry-run
-
       - name: Commit version bump
         run: |
           set -euo pipefail
@@ -99,6 +96,9 @@ jobs:
           git commit -m "chore: release ${VERSION}"
           git tag -a "v${VERSION}" -m "Release ${VERSION}"
           git push origin HEAD:main "refs/tags/v${VERSION}"
+
+      - name: Dry-run publish unleash-api-client-macros
+        run: cargo publish --manifest-path crates/unleash-api-client-macros/Cargo.toml --locked --dry-run
 
       - name: Publish unleash-api-client-macros
         run: cargo publish --manifest-path crates/unleash-api-client-macros/Cargo.toml --locked
