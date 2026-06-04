@@ -1,19 +1,140 @@
-name: Publish to Cargo
+name: Release
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer version to publish, for example 0.16.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
-    name: publish
+    name: Release crates
     environment: cargo
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install MSRV toolchain
+        run: rustup toolchain install 1.85.0
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit
+
+      - name: Validate version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          version="${INPUT_VERSION}"
+          semver_regex='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?$'
+
+          if [[ ! "${version}" =~ ${semver_regex} ]]; then
+            echo "::error::Version must be SemVer without build metadata, for example 0.16.0 or 0.16.0-rc.1"
+            exit 1
+          fi
+
+          if git rev-parse "v${version}" >/dev/null 2>&1; then
+            echo "::error::Tag v${version} already exists"
+            exit 1
+          fi
+
+          echo "VERSION=${version}" >> "${GITHUB_ENV}"
+
+      - name: Bump crate versions
+        run: |
+          set -euo pipefail
+          cargo set-version --workspace "${VERSION}"
+
+      - name: Update lock files
+        run: |
+          set -euo pipefail
+
+          cargo generate-lockfile
+
+          cp Cargo.lock Cargo.lock.release
+          cp Cargo.lock.msrv Cargo.lock
+          cargo +1.85.0 generate-lockfile
+          mv Cargo.lock Cargo.lock.msrv
+          mv Cargo.lock.release Cargo.lock
+
+      - name: Validate package metadata
+        run: cargo metadata --format-version 1 --no-deps --locked
+
+      - name: Test workspace
+        run: cargo test --workspace --locked
+
+      - name: Dry-run publish unleash-api-client-macros
+        run: cargo publish --manifest-path crates/unleash-api-client-macros/Cargo.toml --locked --dry-run
+
+      - name: Commit version bump
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            Cargo.lock \
+            Cargo.lock.msrv \
+            crates/unleash-api-client/Cargo.toml \
+            crates/unleash-api-client-macros/Cargo.toml
+
+          git commit -m "chore: release ${VERSION}"
+          git tag -a "v${VERSION}" -m "Release ${VERSION}"
+          git push origin HEAD:main "refs/tags/v${VERSION}"
+
+      - name: Publish unleash-api-client-macros
+        run: cargo publish --manifest-path crates/unleash-api-client-macros/Cargo.toml --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN_MACROS }}
+
+      - name: Dry-run publish unleash-api-client
+        run: |
+          set -euo pipefail
+
+          for attempt in 1 2 3 4 5; do
+            if cargo publish --manifest-path crates/unleash-api-client/Cargo.toml --locked --dry-run; then
+              exit 0
+            fi
+
+            if [[ "${attempt}" == "5" ]]; then
+              exit 1
+            fi
+
+            sleep 60
+          done
+
       - name: Publish unleash-api-client
-        run: cargo publish --manifest-path crates/unleash-api-client/Cargo.toml
+        run: |
+          set -euo pipefail
+
+          for attempt in 1 2 3 4 5; do
+            if cargo publish --manifest-path crates/unleash-api-client/Cargo.toml --locked; then
+              exit 0
+            fi
+
+            if [[ "${attempt}" == "5" ]]; then
+              exit 1
+            fi
+
+            sleep 60
+          done
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
