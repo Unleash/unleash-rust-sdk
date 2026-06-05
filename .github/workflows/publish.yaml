@@ -1,18 +1,15 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: SemVer version to publish, for example 0.16.0
-        required: true
-        type: string
+  push:
+    tags:
+      - '*'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -23,56 +20,46 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install MSRV toolchain
         run: rustup toolchain install 1.85.0
 
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-edit
-
-      - name: Validate version
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
+      - name: Extract version
         run: |
           set -euo pipefail
 
-          version="${INPUT_VERSION}"
+          version="${GITHUB_REF_NAME}"
+
           semver_regex='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?$'
 
           if [[ ! "${version}" =~ ${semver_regex} ]]; then
-            echo "::error::Version must be SemVer without build metadata, for example 0.16.0 or 0.16.0-rc.1"
-            exit 1
-          fi
-
-          if git rev-parse "v${version}" >/dev/null 2>&1; then
-            echo "::error::Tag v${version} already exists"
+            echo "::error::Tag must be SemVer, for example 0.16.0 or 0.16.0-rc.1"
             exit 1
           fi
 
           echo "VERSION=${version}" >> "${GITHUB_ENV}"
 
-      - name: Bump crate versions
-        run: |
-          set -euo pipefail
-          cargo set-version --workspace "${VERSION}"
-
-      - name: Update lock files
+      - name: Validate package versions
         run: |
           set -euo pipefail
 
-          cargo generate-lockfile
+          macro_version="$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name == "unleash-api-client-macros") | .version')"
 
-          cp Cargo.lock Cargo.lock.release
-          cp Cargo.lock.msrv Cargo.lock
-          cargo +1.85.0 generate-lockfile
-          mv Cargo.lock Cargo.lock.msrv
-          mv Cargo.lock.release Cargo.lock
+          sdk_version="$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name == "unleash-api-client") | .version')"
+
+          if [[ "${macro_version}" != "${VERSION}" ]]; then
+            echo "::error::unleash-api-client-macros version is ${macro_version}, expected ${VERSION}"
+            exit 1
+          fi
+
+          if [[ "${sdk_version}" != "${VERSION}" ]]; then
+            echo "::error::unleash-api-client version is ${sdk_version}, expected ${VERSION}"
+            exit 1
+          fi
 
       - name: Validate package metadata
         run: cargo metadata --format-version 1 --no-deps --locked
@@ -80,27 +67,16 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace --locked
 
-      - name: Commit version bump
-        run: |
-          set -euo pipefail
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add \
-            Cargo.lock.msrv \
-            crates/unleash-api-client/Cargo.toml \
-            crates/unleash-api-client-macros/Cargo.toml
-
-          git commit -m "chore: release ${VERSION}"
-          git tag -a "v${VERSION}" -m "Release ${VERSION}"
-          git push origin HEAD:main "refs/tags/v${VERSION}"
-
       - name: Dry-run publish unleash-api-client-macros
-        run: cargo publish --manifest-path crates/unleash-api-client-macros/Cargo.toml --locked --dry-run
+        run: cargo publish \
+          --manifest-path crates/unleash-api-client-macros/Cargo.toml \
+          --locked \
+          --dry-run
 
       - name: Publish unleash-api-client-macros
-        run: cargo publish --manifest-path crates/unleash-api-client-macros/Cargo.toml --locked
+        run: cargo publish \
+          --manifest-path crates/unleash-api-client-macros/Cargo.toml \
+          --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN_MACROS }}
 
@@ -109,7 +85,10 @@ jobs:
           set -euo pipefail
 
           for attempt in 1 2 3 4 5; do
-            if cargo publish --manifest-path crates/unleash-api-client/Cargo.toml --locked --dry-run; then
+            if cargo publish \
+              --manifest-path crates/unleash-api-client/Cargo.toml \
+              --locked \
+              --dry-run; then
               exit 0
             fi
 
@@ -125,7 +104,9 @@ jobs:
           set -euo pipefail
 
           for attempt in 1 2 3 4 5; do
-            if cargo publish --manifest-path crates/unleash-api-client/Cargo.toml --locked; then
+            if cargo publish \
+              --manifest-path crates/unleash-api-client/Cargo.toml \
+              --locked; then
               exit 0
             fi
 
