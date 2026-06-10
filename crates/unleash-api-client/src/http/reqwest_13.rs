@@ -1,6 +1,6 @@
 //! Shim reqwest 0.13 into an unleash HTTP client
 
-// Copyright 2025
+// Copyright 2026 Cognite AS
 
 use async_trait::async_trait;
 use serde::{de::DeserializeOwned, Serialize};
