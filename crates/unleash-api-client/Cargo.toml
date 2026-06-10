@@ -79,6 +79,13 @@ default-features = false
 features = ["json"]
 optional = true
 
+[dependencies.reqwest-13]
+version = "0.13"
+default-features = false
+features = ["json"]
+optional = true
+package = "reqwest"
+
 [dependencies.reqwest-11]
 version = "0.11"
 default-features = false
@@ -118,8 +125,10 @@ functional = []
 # Built in HTTP clients
 reqwest-client = ["reqwest", "reqwest?/default-tls"]
 reqwest-client-11 = ["reqwest-11", "reqwest-11?/default-tls"]
+reqwest-client-13 = ["reqwest-13", "reqwest-13?/default-tls"]
 # For users that don't want to depend on OpenSSL.
 reqwest-client-11-rustls = ["reqwest-11", "reqwest-11?/rustls-tls"]
+reqwest-client-13-rustls = ["reqwest-13", "reqwest-13?/rustls"]
 reqwest-client-rustls = ["reqwest", "reqwest?/rustls-tls"]
 # To error if an unsupported API feature is present
 strict = []

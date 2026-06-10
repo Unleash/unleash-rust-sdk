@@ -111,13 +111,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
 * **functional** -
   Only relevant to developers: enables the functional test suite.
 * **reqwest-client** -
-  Enables reqwest with OpenSSL TLS support
+  Enables reqwest 0.12 with OpenSSL TLS support
 * **reqwest-client-11** -
   Enables reqwest 0.11 with OpenSSL TLS support
+* **reqwest-client-13** -
+  Enables reqwest 0.13 with OpenSSL TLS support
 * **reqwest-client-rustls** -
-  Enables reqwest with RusTLS support
+  Enables reqwest 0.12 with RusTLS support
 * **reqwest-client-11-rustls** -
   Enables reqwest 0.11 with RusTLS support
+* **reqwest-client-13-rustls** -
+  Enables reqwest 0.13 with RusTLS support
 * **strict** -
   Turn unexpected fields in API responses into errors
 */
@@ -177,7 +181,9 @@ pub mod prelude {
     pub use crate::client::ClientBuilder;
     pub use crate::config::EnvironmentConfig;
     cfg_if::cfg_if! {
-        if #[cfg(feature = "reqwest")] {
+        if #[cfg(feature = "reqwest-13")] {
+            pub use reqwest_13::Client as DefaultClient;
+        } else if #[cfg(feature = "reqwest")] {
             pub use reqwest::Client as DefaultClient;
         } else if #[cfg(feature = "reqwest-11")] {
             pub use reqwest_11::Client as DefaultClient;
