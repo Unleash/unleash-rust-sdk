@@ -118,6 +118,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
   Enables reqwest with RusTLS support
 * **reqwest-client-11-rustls** -
   Enables reqwest 0.11 with RusTLS support
+* **reqwest-client-13** -
+  Enables reqwest 0.13 with RusTLS support
 * **strict** -
   Turn unexpected fields in API responses into errors
 */
@@ -146,7 +148,7 @@ pub use unleash_yggdrasil::Context as YggdrasilContext;
 /// use unleash_api_client::prelude::*;
 /// use unleash_api_client::client::FeatureKey;
 ///
-/// # #[cfg(any(feature = "reqwest", feature = "reqwest-11"))]
+/// # #[cfg(any(feature = "reqwest", feature = "reqwest-11", feature = "reqwest-13"))]
 /// # {
 /// let config = EnvironmentConfig::from_env()?;
 ///
@@ -181,6 +183,8 @@ pub mod prelude {
             pub use reqwest::Client as DefaultClient;
         } else if #[cfg(feature = "reqwest-11")] {
             pub use reqwest_11::Client as DefaultClient;
+        } else if #[cfg(feature = "reqwest-13")] {
+            pub use reqwest_13::Client as DefaultClient;
         }
     }
 }

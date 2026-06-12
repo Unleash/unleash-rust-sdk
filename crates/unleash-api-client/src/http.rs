@@ -5,6 +5,8 @@
 mod reqwest;
 #[cfg(feature = "reqwest-11")]
 mod reqwest_11;
+#[cfg(feature = "reqwest-13")]
+mod reqwest_13;
 mod shim;
 
 pub struct HTTP<C: HttpClient> {

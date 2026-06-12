@@ -14,6 +14,7 @@ jobs:
           # no need for reqwest-client-rustls, it changes only internals of reqwest
           - reqwest-client
           - reqwest-client-11
+          - reqwest-client-13
 
     steps:
       - uses: actions/checkout@v2
@@ -77,13 +78,13 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: -p unleash-api-client --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls --all-targets
+          args: -p unleash-api-client --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls,reqwest-client-13 --all-targets
 
       - uses: actions-rs/cargo@v1
         # We test with approximately all-features to ensure that that does build
         with:
           command: test
-          args: -p unleash-api-client --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls --all-targets
+          args: -p unleash-api-client --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls,reqwest-client-13 --all-targets
 
       - uses: actions-rs/cargo@v1
         with:
@@ -93,7 +94,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -p unleash-api-client --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls --all-targets -- -D warnings
+          args: -p unleash-api-client --features strict,async-std,reqwest-client,reqwest-client-rustls,reqwest-client-11,reqwest-client-11-rustls,reqwest-client-13 --all-targets -- -D warnings
 
       - uses: actions-rs/cargo@v1
         with:

@@ -36,7 +36,7 @@ mod tests {
         async fn sleep(d: Duration);
     }
 
-    #[cfg(any(feature = "reqwest", feature = "reqwest-11"))]
+    #[cfg(any(feature = "reqwest", feature = "reqwest-11", feature = "reqwest-13"))]
     struct TokioJoinHandle {
         inner: tokio::task::JoinHandle<()>,
     }
@@ -58,9 +58,9 @@ mod tests {
         }
     }
 
-    #[cfg(any(feature = "reqwest", feature = "reqwest-11"))]
+    #[cfg(any(feature = "reqwest", feature = "reqwest-11", feature = "reqwest-13"))]
     struct TokioAsync;
-    #[cfg(any(feature = "reqwest", feature = "reqwest-11"))]
+    #[cfg(any(feature = "reqwest", feature = "reqwest-11", feature = "reqwest-13"))]
     #[async_trait]
     impl AsyncImpl for TokioAsync {
         type JoinHandle = TokioJoinHandle;
@@ -116,6 +116,14 @@ mod tests {
     #[tokio::test]
     async fn test_smoke_async_reqwest() {
         test_smoke_async::<reqwest_11::Client>().await.unwrap();
+    }
+    #[cfg(all(
+        feature = "reqwest-13",
+        not(any(feature = "reqwest", feature = "reqwest-11"))
+    ))]
+    #[tokio::test]
+    async fn test_smoke_async_reqwest() {
+        test_smoke_async::<reqwest_13::Client>().await.unwrap();
     }
 
     async fn test_smoke_threaded<C, A>(
@@ -173,6 +181,16 @@ mod tests {
     #[tokio::test]
     async fn test_smoke_threaded_reqwest() {
         test_smoke_threaded::<reqwest_11::Client, TokioAsync>()
+            .await
+            .unwrap();
+    }
+    #[cfg(all(
+        feature = "reqwest-13",
+        not(any(feature = "reqwest", feature = "reqwest-11"))
+    ))]
+    #[tokio::test]
+    async fn test_smoke_threaded_reqwest() {
+        test_smoke_threaded::<reqwest_13::Client, TokioAsync>()
             .await
             .unwrap();
     }

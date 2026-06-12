@@ -90,6 +90,8 @@ mod tests {
                 use reqwest::Client as HttpClient;
             } else if #[cfg(feature = "reqwest-11")] {
                 use reqwest_11::Client as HttpClient;
+            } else if #[cfg(feature = "reqwest-13")] {
+                use reqwest_13::Client as HttpClient;
             } else {
                 compile_error!("Cannot run test suite without a client enabled");
             }
