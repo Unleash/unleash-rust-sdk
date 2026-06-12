@@ -13,7 +13,6 @@ use unleash_api_client::{
     client::{self, FeatureKey},
     config::EnvironmentConfig,
 };
-use unleash_api_client_macros::FeatureKey;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, FeatureKey)]

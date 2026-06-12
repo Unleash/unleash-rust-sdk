@@ -23,6 +23,8 @@ use crate::context::Context;
 use crate::http::{HttpClient, HTTP};
 use crate::strategy;
 
+pub use unleash_api_client_macros::FeatureKey;
+
 // ----------------- Variant
 
 /// Variant is returned from `Client.get_variant` and is a cut down and

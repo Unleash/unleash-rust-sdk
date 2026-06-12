@@ -15,7 +15,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         use futures_timer::Delay;
 
         use unleash_api_client::{client, config::EnvironmentConfig};
-        use unleash_api_client_macros::FeatureKey;
         use unleash_api_client::client::FeatureKey;
 
         #[allow(non_camel_case_types)]

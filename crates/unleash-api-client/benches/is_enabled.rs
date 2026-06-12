@@ -15,7 +15,6 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use maplit::hashmap;
 use rand::{distr::Alphanumeric, rng, Rng};
 use serde::Deserialize;
-use unleash_api_client_macros::FeatureKey;
 use unleash_types::client_features::ClientFeatures;
 
 use unleash_api_client::api::{Feature, Features, Strategy};

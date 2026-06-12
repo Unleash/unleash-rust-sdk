@@ -13,7 +13,6 @@ use std::time::Duration;
 use futures_timer::Delay;
 
 use unleash_api_client::{client::{self, FeatureKey}, config::EnvironmentConfig};
-use unleash_api_client_macros::FeatureKey;
 
 
 #[allow(non_camel_case_types)]
