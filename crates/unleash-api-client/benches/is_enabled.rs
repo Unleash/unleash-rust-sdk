@@ -20,7 +20,6 @@ use unleash_types::client_features::ClientFeatures;
 use unleash_api_client::api::{Feature, Features, Strategy};
 use unleash_api_client::client::{self, FeatureKey};
 use unleash_api_client::context::Context;
-use unleash_api_client::http::HttpClient;
 
 // TODO: do a build.rs thing to determine available CPU count at build time for
 // optimal vec sizing.
@@ -158,13 +157,10 @@ enum UserFeatures {
     Unknown63,
 }
 
-fn client<C>(count: usize) -> client::Client<UserFeatures, C>
-where
-    C: HttpClient + Default,
-{
+fn client(count: usize) -> client::Client<UserFeatures> {
     let client = client::ClientBuilder::default()
         .enable_string_features()
-        .into_client::<UserFeatures, C>("notused", "app", "test", None)
+        .into_client::<UserFeatures>("notused", "app", "test", None)
         .unwrap();
     let mut features = vec![];
     for i in 0..count {
@@ -218,17 +214,6 @@ fn random_str() -> String {
 }
 
 fn batch(c: &mut Criterion) {
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "reqwest")] {
-            use reqwest::Client as HttpClient;
-        } else if #[cfg(feature = "reqwest-11")] {
-            use reqwest_11::Client as HttpClient;
-        } else if #[cfg(feature = "reqwest-13")] {
-            use reqwest_13::Client as HttpClient;
-        } else {
-            compile_error!("Cannot run test suite without a client enabled");
-        }
-    }
     let _ = simple_logger::SimpleLogger::new()
         .with_utc_timestamps()
         .with_module_level("isahc::agent", log::LevelFilter::Off)
@@ -237,7 +222,7 @@ fn batch(c: &mut Criterion) {
         .with_level(log::LevelFilter::Warn)
         .init();
     let cpus = num_cpus::get();
-    let client = Arc::new(client::<HttpClient>(cpus));
+    let client = Arc::new(client(cpus));
     let iterations = 50_000;
     println!("Benchmarking across {cpus} threads with {iterations} iterations per thread");
     let mut group = c.benchmark_group("batch");
@@ -418,18 +403,7 @@ fn single_call(c: &mut Criterion) {
         .with_module_level("tracing::span::active", log::LevelFilter::Off)
         .with_level(log::LevelFilter::Warn)
         .init();
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "reqwest")] {
-            use reqwest::Client as HttpClient;
-        } else if #[cfg(feature = "reqwest-11")] {
-            use reqwest_11::Client as HttpClient;
-        } else if #[cfg(feature = "reqwest-13")] {
-            use reqwest_13::Client as HttpClient;
-        } else {
-            compile_error!("Cannot run test suite without a client enabled");
-        }
-    }
-    let client = client::<HttpClient>(1);
+    let client = client(1);
     let context = Context {
         user_id: Some(random_str()),
         ..Default::default()

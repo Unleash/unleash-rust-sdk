@@ -33,7 +33,7 @@ The easiest way to get started with the `Client` is using the `ClientBuilder`. A
 let config = EnvironmentConfig::from_env()?;
 let client = client::ClientBuilder::default()
     .interval(500)
-    .into_client::<UserFeatures, reqwest::Client>(
+    .into_client::<UserFeatures>(
         &config.api_url,
         &config.app_name,
         &config.instance_id,

@@ -18,7 +18,7 @@ mod tests {
     use futures_timer::Delay;
     use serde::{Deserialize, Serialize};
 
-    use unleash_api_client::{client, config::EnvironmentConfig, http::HttpClient};
+    use unleash_api_client::{client, config::EnvironmentConfig, http::Transport};
 
     #[allow(non_camel_case_types)]
     #[derive(Debug, Deserialize, Serialize, Enum, Clone)]
@@ -78,20 +78,21 @@ mod tests {
         }
     }
 
-    async fn test_smoke_async<C>() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
+    async fn test_smoke_async<T>() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
     where
-        C: HttpClient + Default + 'static,
+        T: Transport + Default + 'static,
     {
         let _ = simple_logger::init();
 
         let config = EnvironmentConfig::from_env()?;
         let client = client::ClientBuilder::default()
             .interval(500)
-            .into_client::<UserFeatures, C>(
+            .into_client_with_transport::<UserFeatures, _>(
                 &config.api_url,
                 &config.app_name,
                 &config.instance_id,
                 config.secret,
+                T::default(),
             )?;
         client.register().await?;
         futures::future::join(client.poll_for_updates(), async {
@@ -110,12 +111,16 @@ mod tests {
     #[cfg(feature = "reqwest")]
     #[tokio::test]
     async fn test_smoke_async_reqwest() {
-        test_smoke_async::<reqwest::Client>().await.unwrap();
+        test_smoke_async::<unleash_api_client::http::transport::ReqwestTransport>()
+            .await
+            .unwrap();
     }
     #[cfg(all(feature = "reqwest-11", not(feature = "reqwest")))]
     #[tokio::test]
     async fn test_smoke_async_reqwest() {
-        test_smoke_async::<reqwest_11::Client>().await.unwrap();
+        test_smoke_async::<unleash_api_client::http::transport::Reqwest11Transport>()
+            .await
+            .unwrap();
     }
     #[cfg(all(
         feature = "reqwest-13",
@@ -123,26 +128,28 @@ mod tests {
     ))]
     #[tokio::test]
     async fn test_smoke_async_reqwest() {
-        test_smoke_async::<reqwest_13::Client>().await.unwrap();
+        test_smoke_async::<unleash_api_client::http::transport::Reqwest13Transport>()
+            .await
+            .unwrap();
     }
 
-    async fn test_smoke_threaded<C, A>(
+    async fn test_smoke_threaded<T, A>(
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
     where
-        C: HttpClient + Default + 'static,
+        T: Transport + Default + 'static,
         A: AsyncImpl,
-        <C as unleash_api_client::http::HttpClient>::RequestBuilder: std::marker::Send,
     {
         let _ = simple_logger::init();
         let config = EnvironmentConfig::from_env()?;
         let client = Arc::new(
             client::ClientBuilder::default()
                 .interval(500)
-                .into_client::<_, C>(
+                .into_client_with_transport::<_, _>(
                     &config.api_url,
                     &config.app_name,
                     &config.instance_id,
                     config.secret,
+                    T::default(),
                 )?,
         );
 
@@ -173,16 +180,17 @@ mod tests {
     #[cfg(feature = "reqwest")]
     #[tokio::test]
     async fn test_smoke_threaded_reqwest() {
-        test_smoke_threaded::<reqwest::Client, TokioAsync>()
+        test_smoke_threaded::<unleash_api_client::http::transport::ReqwestTransport, TokioAsync>()
             .await
             .unwrap();
     }
     #[cfg(all(feature = "reqwest-11", not(feature = "reqwest")))]
     #[tokio::test]
     async fn test_smoke_threaded_reqwest() {
-        test_smoke_threaded::<reqwest_11::Client, TokioAsync>()
-            .await
-            .unwrap();
+        test_smoke_threaded::<unleash_api_client::http::transport::Reqwest11Transport, TokioAsync>(
+        )
+        .await
+        .unwrap();
     }
     #[cfg(all(
         feature = "reqwest-13",
@@ -190,8 +198,9 @@ mod tests {
     ))]
     #[tokio::test]
     async fn test_smoke_threaded_reqwest() {
-        test_smoke_threaded::<reqwest_13::Client, TokioAsync>()
-            .await
-            .unwrap();
+        test_smoke_threaded::<unleash_api_client::http::transport::Reqwest13Transport, TokioAsync>(
+        )
+        .await
+        .unwrap();
     }
 }

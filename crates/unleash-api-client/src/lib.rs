@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let config = EnvironmentConfig::from_env()?;
         let client = client::ClientBuilder::default()
             .strategy("reversed", Box::new(&_reversed_uids))
-            .into_client::<UserFeatures, unleash_api_client::prelude::DefaultClient>(
+            .into_client::<UserFeatures>(
                 &config.api_url,
                 &config.app_name,
                 &config.instance_id,
@@ -166,7 +166,7 @@ pub use unleash_yggdrasil::Context as YggdrasilContext;
 /// }
 ///
 /// let client = ClientBuilder::default()
-///     .into_client::<UserFeatures, DefaultClient>(
+///     .into_client::<UserFeatures>(
 ///         &config.api_url,
 ///         &config.app_name,
 ///         &config.instance_id,
@@ -178,13 +178,7 @@ pub use unleash_yggdrasil::Context as YggdrasilContext;
 pub mod prelude {
     pub use crate::client::ClientBuilder;
     pub use crate::config::EnvironmentConfig;
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "reqwest")] {
-            pub use reqwest::Client as DefaultClient;
-        } else if #[cfg(feature = "reqwest-11")] {
-            pub use reqwest_11::Client as DefaultClient;
-        } else if #[cfg(feature = "reqwest-13")] {
-            pub use reqwest_13::Client as DefaultClient;
-        }
-    }
+    #[cfg(any(feature = "reqwest", feature = "reqwest-11", feature = "reqwest-13"))]
+    pub use crate::http::default_transport;
+    pub use crate::http::{Request, Response, Transport};
 }

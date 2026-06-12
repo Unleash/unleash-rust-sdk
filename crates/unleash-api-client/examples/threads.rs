@@ -23,15 +23,12 @@ enum UserFeatures {
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     cfg_if::cfg_if! {
         if #[cfg(feature = "reqwest")] {
-            use reqwest::Client as HttpClient;
             use tokio::runtime::Runtime;
             let rt = Arc::new(Runtime::new().unwrap());
         } else if #[cfg(feature = "reqwest-11")] {
-            use reqwest_11::Client as HttpClient;
             use tokio::runtime::Runtime;
             let rt = Arc::new(Runtime::new().unwrap());
         } else if #[cfg(feature = "reqwest-13")] {
-            use reqwest_13::Client as HttpClient;
             use tokio::runtime::Runtime;
             let rt = Arc::new(Runtime::new().unwrap());
         } else {
@@ -46,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     let client = Arc::new(
         client::ClientBuilder::default()
             .interval(500)
-            .into_client::<UserFeatures, HttpClient>(
+            .into_client::<UserFeatures>(
                 &config.api_url,
                 &config.app_name,
                 &config.instance_id,

@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use crate::api::{Features, Metrics, MetricsBucket, Registration, ToggleMetrics};
 use crate::context::Context;
-use crate::http::{HttpClient, HTTP};
+use crate::http::{BoxError, Http, Transport, TransportRef};
 use crate::strategy;
 
 pub use unleash_api_client_macros::FeatureKey;
@@ -55,16 +55,57 @@ pub struct ClientBuilder {
 }
 
 impl ClientBuilder {
-    pub fn into_client<F, C>(
+    #[cfg(any(feature = "reqwest", feature = "reqwest-11", feature = "reqwest-13"))]
+    pub fn into_client<F>(
         self,
         api_url: &str,
         app_name: &str,
         instance_id: &str,
         authorization: Option<String>,
-    ) -> Result<Client<F, C>, C::Error>
+    ) -> Result<Client<F>, BoxError>
     where
         F: FeatureKey,
-        C: HttpClient + Default,
+    {
+        self.into_client_with_transport(
+            api_url,
+            app_name,
+            instance_id,
+            authorization,
+            crate::http::default_transport(),
+        )
+    }
+
+    pub fn into_client_with_transport<F, T>(
+        self,
+        api_url: &str,
+        app_name: &str,
+        instance_id: &str,
+        authorization: Option<String>,
+        transport: T,
+    ) -> Result<Client<F>, BoxError>
+    where
+        F: FeatureKey,
+        T: Transport,
+    {
+        self.into_client_with_transport_ref(
+            api_url,
+            app_name,
+            instance_id,
+            authorization,
+            Arc::new(transport),
+        )
+    }
+
+    pub fn into_client_with_transport_ref<F>(
+        self,
+        api_url: &str,
+        app_name: &str,
+        instance_id: &str,
+        authorization: Option<String>,
+        transport: TransportRef,
+    ) -> Result<Client<F>, BoxError>
+    where
+        F: FeatureKey,
     {
         let connection_id = Uuid::new_v4().to_string();
         Ok(Client {
@@ -76,12 +117,13 @@ impl ClientBuilder {
             connection_id: connection_id.clone(),
             interval: self.interval,
             polling: AtomicBool::new(false),
-            http: HTTP::new(
+            http: Http::new(
+                transport,
                 app_name.into(),
                 instance_id.into(),
                 connection_id,
                 authorization,
-            )?,
+            ),
             cached_state: ArcSwapOption::from(None),
             strategies: Mutex::new(self.strategies),
         })
@@ -158,10 +200,9 @@ where
     _feature_type: PhantomData<fn() -> F>,
 }
 
-pub struct Client<F, C>
+pub struct Client<F>
 where
     F: FeatureKey,
-    C: HttpClient,
 {
     api_url: String,
     app_name: String,
@@ -172,17 +213,16 @@ where
     interval: u64,
     polling: AtomicBool,
     // Permits making extension calls to the Unleash API not yet modelled in the Rust SDK.
-    pub http: HTTP<C>,
+    pub http: Http<TransportRef>,
     // known strategies: strategy_name : memoiser
     strategies: Mutex<HashMap<String, strategy::Strategy>>,
     // memoised state: feature_name: [callback, callback, ...]
     cached_state: ArcSwapOption<CachedState<F>>,
 }
 
-impl<F, C> Client<F, C>
+impl<F> Client<F>
 where
     F: FeatureKey,
-    C: HttpClient + Default,
 {
     /// The cached state can be accessed. It may be uninitialised, and
     /// represents a point in time snapshot: subsequent calls may have wound the
@@ -612,51 +652,18 @@ mod tests {
     use unleash_types::client_features::ClientFeatures as YggdrasilClientFeatures;
 
     #[derive(Default)]
-    struct HttpClient;
-
-    #[derive(Debug)]
-    struct HttpClientError;
-
-    impl std::fmt::Display for HttpClientError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str("test HTTP client error")
-        }
-    }
-
-    impl std::error::Error for HttpClientError {}
+    struct TestTransport;
 
     #[async_trait::async_trait]
-    impl crate::http::HttpClient for HttpClient {
-        type Error = HttpClientError;
-        type HeaderName = &'static str;
-        type RequestBuilder = ();
-
-        fn build_header(name: &'static str) -> Result<Self::HeaderName, Self::Error> {
-            Ok(name)
-        }
-
-        fn get(&self, _uri: &str) -> Self::RequestBuilder {}
-
-        fn post(&self, _uri: &str) -> Self::RequestBuilder {}
-
-        fn header(
-            _builder: Self::RequestBuilder,
-            _key: &Self::HeaderName,
-            _value: &str,
-        ) -> Self::RequestBuilder {
-        }
-
-        async fn get_json<T: serde::de::DeserializeOwned>(
-            _req: Self::RequestBuilder,
-        ) -> Result<T, Self::Error> {
-            Err(HttpClientError)
-        }
-
-        async fn post_json<T: serde::Serialize + Sync>(
-            _req: Self::RequestBuilder,
-            _content: &T,
-        ) -> Result<bool, Self::Error> {
-            Err(HttpClientError)
+    impl crate::http::Transport for TestTransport {
+        async fn execute(
+            &self,
+            _request: crate::http::Request,
+        ) -> Result<crate::http::Response, crate::http::BoxError> {
+            Ok(crate::http::Response {
+                status: 200,
+                body: Vec::new(),
+            })
         }
     }
 
@@ -762,7 +769,13 @@ mod tests {
             }
         }
         let c = ClientBuilder::default()
-            .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
+            .into_client_with_transport::<UserFeatures, _>(
+                "http://127.0.0.1:1234/",
+                "foo",
+                "test",
+                None,
+                TestTransport,
+            )
             .unwrap();
 
         c.memoize(api_features_to_yggdrasil(f)).unwrap();
@@ -812,7 +825,13 @@ mod tests {
 
         let c = ClientBuilder::default()
             .enable_string_features()
-            .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
+            .into_client_with_transport::<NoFeatures, _>(
+                "http://127.0.0.1:1234/",
+                "foo",
+                "test",
+                None,
+                TestTransport,
+            )
             .unwrap();
 
         c.memoize(api_features_to_yggdrasil(f)).unwrap();
@@ -887,7 +906,13 @@ mod tests {
 
         let client = ClientBuilder::default()
             .strategy("reversed", Box::new(&_reversed_uids))
-            .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
+            .into_client_with_transport::<UserFeatures, _>(
+                "http://127.0.0.1:1234/",
+                "foo",
+                "test",
+                None,
+                TestTransport,
+            )
             .unwrap();
 
         let f = Features {
@@ -1042,7 +1067,13 @@ mod tests {
         }
 
         let c = ClientBuilder::default()
-            .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
+            .into_client_with_transport::<UserFeatures, _>(
+                "http://127.0.0.1:1234/",
+                "foo",
+                "test",
+                None,
+                TestTransport,
+            )
             .unwrap();
 
         c.memoize(api_features_to_yggdrasil(f)).unwrap();
@@ -1122,7 +1153,13 @@ mod tests {
 
         let c = ClientBuilder::default()
             .enable_string_features()
-            .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
+            .into_client_with_transport::<NoFeatures, _>(
+                "http://127.0.0.1:1234/",
+                "foo",
+                "test",
+                None,
+                TestTransport,
+            )
             .unwrap();
 
         c.memoize(api_features_to_yggdrasil(f)).unwrap();
@@ -1206,7 +1243,13 @@ mod tests {
         }
 
         let c = ClientBuilder::default()
-            .into_client::<UserFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
+            .into_client_with_transport::<UserFeatures, _>(
+                "http://127.0.0.1:1234/",
+                "foo",
+                "test",
+                None,
+                TestTransport,
+            )
             .unwrap();
 
         c.memoize(api_features_to_yggdrasil(f)).unwrap();
@@ -1272,7 +1315,13 @@ mod tests {
         }
         let c = ClientBuilder::default()
             .enable_string_features()
-            .into_client::<NoFeatures, HttpClient>("http://127.0.0.1:1234/", "foo", "test", None)
+            .into_client_with_transport::<NoFeatures, _>(
+                "http://127.0.0.1:1234/",
+                "foo",
+                "test",
+                None,
+                TestTransport,
+            )
             .unwrap();
 
         c.memoize(api_features_to_yggdrasil(f)).unwrap();
