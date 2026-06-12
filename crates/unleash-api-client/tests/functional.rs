@@ -111,14 +111,14 @@ mod tests {
     #[cfg(feature = "reqwest")]
     #[tokio::test]
     async fn test_smoke_async_reqwest() {
-        test_smoke_async::<unleash_api_client::http::transport::ReqwestTransport>()
+        test_smoke_async::<unleash_api_client::http::reqwest::ReqwestTransport>()
             .await
             .unwrap();
     }
     #[cfg(all(feature = "reqwest-11", not(feature = "reqwest")))]
     #[tokio::test]
     async fn test_smoke_async_reqwest() {
-        test_smoke_async::<unleash_api_client::http::transport::Reqwest11Transport>()
+        test_smoke_async::<unleash_api_client::http::reqwest::ReqwestTransport>()
             .await
             .unwrap();
     }
@@ -128,7 +128,7 @@ mod tests {
     ))]
     #[tokio::test]
     async fn test_smoke_async_reqwest() {
-        test_smoke_async::<unleash_api_client::http::transport::Reqwest13Transport>()
+        test_smoke_async::<unleash_api_client::http::reqwest::ReqwestTransport>()
             .await
             .unwrap();
     }
@@ -180,17 +180,16 @@ mod tests {
     #[cfg(feature = "reqwest")]
     #[tokio::test]
     async fn test_smoke_threaded_reqwest() {
-        test_smoke_threaded::<unleash_api_client::http::transport::ReqwestTransport, TokioAsync>()
+        test_smoke_threaded::<unleash_api_client::http::reqwest::ReqwestTransport, TokioAsync>()
             .await
             .unwrap();
     }
     #[cfg(all(feature = "reqwest-11", not(feature = "reqwest")))]
     #[tokio::test]
     async fn test_smoke_threaded_reqwest() {
-        test_smoke_threaded::<unleash_api_client::http::transport::Reqwest11Transport, TokioAsync>(
-        )
-        .await
-        .unwrap();
+        test_smoke_threaded::<unleash_api_client::http::reqwest::ReqwestTransport, TokioAsync>()
+            .await
+            .unwrap();
     }
     #[cfg(all(
         feature = "reqwest-13",
@@ -198,9 +197,8 @@ mod tests {
     ))]
     #[tokio::test]
     async fn test_smoke_threaded_reqwest() {
-        test_smoke_threaded::<unleash_api_client::http::transport::Reqwest13Transport, TokioAsync>(
-        )
-        .await
-        .unwrap();
+        test_smoke_threaded::<unleash_api_client::http::reqwest::ReqwestTransport, TokioAsync>()
+            .await
+            .unwrap();
     }
 }
