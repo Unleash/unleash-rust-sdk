@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use crate::api::{Features, Metrics, MetricsBucket, Registration, ToggleMetrics};
 use crate::context::Context;
-use crate::http::{Http, Transport, TransportRef};
+use crate::http::{Http, TransportRef};
 use crate::strategy;
 
 pub use unleash_api_client_macros::FeatureKey;
@@ -75,28 +75,7 @@ impl ClientBuilder {
         )
     }
 
-    pub fn into_client_with_transport<F, T>(
-        self,
-        api_url: &str,
-        app_name: &str,
-        instance_id: &str,
-        authorization: Option<String>,
-        transport: T,
-    ) -> Result<Client<F>, anyhow::Error>
-    where
-        F: FeatureKey,
-        T: Transport,
-    {
-        self.into_client_with_transport_ref(
-            api_url,
-            app_name,
-            instance_id,
-            authorization,
-            Arc::new(transport),
-        )
-    }
-
-    pub fn into_client_with_transport_ref<F>(
+    pub fn into_client_with_transport<F>(
         self,
         api_url: &str,
         app_name: &str,
@@ -633,6 +612,7 @@ mod tests {
     use std::collections::hash_set::HashSet;
     use std::default::Default;
     use std::hash::BuildHasher;
+    use std::sync::Arc;
     use unleash_yggdrasil::{EngineState, UpdateMessage};
 
     use super::{ClientBuilder, Variant};
@@ -769,12 +749,12 @@ mod tests {
             }
         }
         let c = ClientBuilder::default()
-            .into_client_with_transport::<UserFeatures, _>(
+            .into_client_with_transport::<UserFeatures>(
                 "http://127.0.0.1:1234/",
                 "foo",
                 "test",
                 None,
-                TestTransport,
+                Arc::new(TestTransport),
             )
             .unwrap();
 
@@ -825,12 +805,12 @@ mod tests {
 
         let c = ClientBuilder::default()
             .enable_string_features()
-            .into_client_with_transport::<NoFeatures, _>(
+            .into_client_with_transport::<NoFeatures>(
                 "http://127.0.0.1:1234/",
                 "foo",
                 "test",
                 None,
-                TestTransport,
+                Arc::new(TestTransport),
             )
             .unwrap();
 
@@ -906,12 +886,12 @@ mod tests {
 
         let client = ClientBuilder::default()
             .strategy("reversed", Box::new(&_reversed_uids))
-            .into_client_with_transport::<UserFeatures, _>(
+            .into_client_with_transport::<UserFeatures>(
                 "http://127.0.0.1:1234/",
                 "foo",
                 "test",
                 None,
-                TestTransport,
+                Arc::new(TestTransport),
             )
             .unwrap();
 
@@ -1067,12 +1047,12 @@ mod tests {
         }
 
         let c = ClientBuilder::default()
-            .into_client_with_transport::<UserFeatures, _>(
+            .into_client_with_transport::<UserFeatures>(
                 "http://127.0.0.1:1234/",
                 "foo",
                 "test",
                 None,
-                TestTransport,
+                Arc::new(TestTransport),
             )
             .unwrap();
 
@@ -1153,12 +1133,12 @@ mod tests {
 
         let c = ClientBuilder::default()
             .enable_string_features()
-            .into_client_with_transport::<NoFeatures, _>(
+            .into_client_with_transport::<NoFeatures>(
                 "http://127.0.0.1:1234/",
                 "foo",
                 "test",
                 None,
-                TestTransport,
+                Arc::new(TestTransport),
             )
             .unwrap();
 
@@ -1243,12 +1223,12 @@ mod tests {
         }
 
         let c = ClientBuilder::default()
-            .into_client_with_transport::<UserFeatures, _>(
+            .into_client_with_transport::<UserFeatures>(
                 "http://127.0.0.1:1234/",
                 "foo",
                 "test",
                 None,
-                TestTransport,
+                Arc::new(TestTransport),
             )
             .unwrap();
 
@@ -1315,12 +1295,12 @@ mod tests {
         }
         let c = ClientBuilder::default()
             .enable_string_features()
-            .into_client_with_transport::<NoFeatures, _>(
+            .into_client_with_transport::<NoFeatures>(
                 "http://127.0.0.1:1234/",
                 "foo",
                 "test",
                 None,
-                TestTransport,
+                Arc::new(TestTransport),
             )
             .unwrap();
 
