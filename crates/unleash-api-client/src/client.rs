@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use crate::api::{Features, Metrics, MetricsBucket, Registration, ToggleMetrics};
 use crate::context::Context;
-use crate::http::{BoxError, Http, Transport, TransportRef};
+use crate::http::{Http, Transport, TransportRef};
 use crate::strategy;
 
 pub use unleash_api_client_macros::FeatureKey;
@@ -62,7 +62,7 @@ impl ClientBuilder {
         app_name: &str,
         instance_id: &str,
         authorization: Option<String>,
-    ) -> Result<Client<F>, BoxError>
+    ) -> Result<Client<F>, anyhow::Error>
     where
         F: FeatureKey,
     {
@@ -82,7 +82,7 @@ impl ClientBuilder {
         instance_id: &str,
         authorization: Option<String>,
         transport: T,
-    ) -> Result<Client<F>, BoxError>
+    ) -> Result<Client<F>, anyhow::Error>
     where
         F: FeatureKey,
         T: Transport,
@@ -103,7 +103,7 @@ impl ClientBuilder {
         instance_id: &str,
         authorization: Option<String>,
         transport: TransportRef,
-    ) -> Result<Client<F>, BoxError>
+    ) -> Result<Client<F>, anyhow::Error>
     where
         F: FeatureKey,
     {
@@ -659,7 +659,7 @@ mod tests {
         async fn execute(
             &self,
             _request: crate::http::Request,
-        ) -> Result<crate::http::Response, crate::http::BoxError> {
+        ) -> Result<crate::http::Response, anyhow::Error> {
             Ok(crate::http::Response {
                 status: 200,
                 body: Vec::new(),

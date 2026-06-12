@@ -7,4 +7,4 @@ pub mod transport;
 
 #[cfg(any(feature = "reqwest", feature = "reqwest-11", feature = "reqwest-13"))]
 pub use reqwest::default_transport;
-pub use transport::{BoxError, Http, Method, Request, Response, Transport, TransportRef};
+pub use transport::{Http, Method, Request, Response, Transport, TransportRef};

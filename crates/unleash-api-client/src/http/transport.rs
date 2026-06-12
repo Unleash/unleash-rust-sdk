@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -6,7 +5,6 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::version::get_sdk_version;
 
-pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 pub type TransportRef = Arc<dyn Transport>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,7 +29,7 @@ pub struct Response {
 
 #[async_trait]
 pub trait Transport: Send + Sync + 'static {
-    async fn execute(&self, request: Request) -> Result<Response, BoxError>;
+    async fn execute(&self, request: Request) -> Result<Response, anyhow::Error>;
 }
 
 #[async_trait]
@@ -39,7 +37,7 @@ impl<T> Transport for Arc<T>
 where
     T: Transport + ?Sized,
 {
-    async fn execute(&self, request: Request) -> Result<Response, BoxError> {
+    async fn execute(&self, request: Request) -> Result<Response, anyhow::Error> {
         (**self).execute(request).await
     }
 }
@@ -75,7 +73,7 @@ impl<T: Transport> Http<T> {
         &self,
         endpoint: &str,
         interval: Option<u64>,
-    ) -> Result<R, BoxError> {
+    ) -> Result<R, anyhow::Error> {
         let request = self.request(Method::Get, endpoint, interval, None);
         let response = self.transport.execute(request).await?;
         Ok(serde_json::from_slice(&response.body)?)
@@ -86,7 +84,7 @@ impl<T: Transport> Http<T> {
         endpoint: &str,
         content: B,
         interval: Option<u64>,
-    ) -> Result<bool, BoxError> {
+    ) -> Result<bool, anyhow::Error> {
         let body = serde_json::to_vec(&content)?;
         let request = self.request(Method::Post, endpoint, interval, Some(body));
         let response = self.transport.execute(request).await?;

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use super::{BoxError, Method, Request, Response, Transport, TransportRef};
+use super::{Method, Request, Response, Transport, TransportRef};
 
 #[cfg(feature = "reqwest")]
 type ReqwestClient = ::reqwest::Client;
@@ -32,7 +32,7 @@ impl Default for ReqwestTransport {
 
 #[async_trait]
 impl Transport for ReqwestTransport {
-    async fn execute(&self, request: Request) -> Result<Response, BoxError> {
+    async fn execute(&self, request: Request) -> Result<Response, anyhow::Error> {
         let mut builder = match request.method {
             Method::Get => self.client.get(&request.url),
             Method::Post => self.client.post(&request.url),
