@@ -10,18 +10,19 @@
 mod tests {
     use std::sync::Arc;
     use std::time::Duration;
-    use std::{future::Future, pin::Pin};
+    use std::{future::Future, pin::Pin, task};
 
-    use async_std::task;
     use async_trait::async_trait;
-    use enum_map::Enum;
     use futures_timer::Delay;
-    use serde::{Deserialize, Serialize};
 
-    use unleash_api_client::{client, config::EnvironmentConfig, http::Transport};
+    use unleash_api_client::{
+        client::{self, FeatureKey},
+        config::EnvironmentConfig,
+        http::Transport,
+    };
 
     #[allow(non_camel_case_types)]
-    #[derive(Debug, Deserialize, Serialize, Enum, Clone)]
+    #[derive(Debug, Copy, Clone, FeatureKey)]
     enum UserFeatures {
         default,
     }
@@ -87,7 +88,7 @@ mod tests {
         let config = EnvironmentConfig::from_env()?;
         let client = client::ClientBuilder::default()
             .interval(500)
-            .into_client_with_transport_ref::<UserFeatures>(
+            .into_client_with_transport::<UserFeatures>(
                 &config.api_url,
                 &config.app_name,
                 &config.instance_id,
@@ -144,7 +145,7 @@ mod tests {
         let client = Arc::new(
             client::ClientBuilder::default()
                 .interval(500)
-                .into_client_with_transport_ref::<_>(
+                .into_client_with_transport::<_>(
                     &config.api_url,
                     &config.app_name,
                     &config.instance_id,

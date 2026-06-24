@@ -88,6 +88,11 @@ jobs:
 
       - uses: actions-rs/cargo@v1
         with:
+          command: check
+          args: -p unleash-api-client --features functional,reqwest-client --test functional
+
+      - uses: actions-rs/cargo@v1
+        with:
           command: fmt
           args: --all -- --check
 
