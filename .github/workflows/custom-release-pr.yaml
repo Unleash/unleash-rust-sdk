@@ -85,12 +85,11 @@ jobs:
           fi
 
           latest_tag="$(git tag --sort=-version:refname \
-            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
             | head -n1 || true)"
 
           if [[ -n "${latest_tag}" ]]; then
-            newest="$(printf '%s\n%s\n' "${latest_tag}" "${release_tag}" | sort -V | tail -n1)"
-            if [[ "${newest}" != "${release_tag}" || "${release_tag}" == "${latest_tag}" ]]; then
+            if [[ "${release_tag}" == "${latest_tag}" ]]; then
               echo "Package version ${release_tag} is not newer than latest tag ${latest_tag}."
               exit 0
             fi
@@ -137,7 +136,7 @@ jobs:
           set -euo pipefail
 
           latest_tag="$(git tag --sort=-version:refname \
-            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
             | head -n1 || true)"
 
           if [[ -z "${latest_tag}" ]]; then
@@ -200,15 +199,31 @@ jobs:
           set -euo pipefail
 
           current="${{ steps.latest.outputs.latest_version }}"
+          package_version="$(awk '
+            BEGIN{p=0}
+            /^\[package\]/{p=1;next}
+            /^\[/{p=0}
+            p==1 && $1=="version"{
+              gsub(/"/, "", $3); print $3; exit
+            }' crates/unleash-api-client/Cargo.toml)"
+
+          if [[ "${package_version}" == *-* ]]; then
+            current="${package_version}"
+          fi
+
           base="${current%%-*}"
           IFS='.' read -r major minor patch <<< "${base}"
 
-          case "${{ steps.semver.outputs.level }}" in
-            major) next="$((major + 1)).0.0" ;;
-            minor) next="${major}.$((minor + 1)).0" ;;
-            patch) next="${major}.${minor}.$((patch + 1))" ;;
-            *) echo "Unsupported release level: ${{ steps.semver.outputs.level }}"; exit 1 ;;
-          esac
+          if [[ "${current}" == *-* ]]; then
+            next="${base}"
+          else
+            case "${{ steps.semver.outputs.level }}" in
+              major) next="$((major + 1)).0.0" ;;
+              minor) next="${major}.$((minor + 1)).0" ;;
+              patch) next="${major}.${minor}.$((patch + 1))" ;;
+              *) echo "Unsupported release level: ${{ steps.semver.outputs.level }}"; exit 1 ;;
+            esac
+          fi
 
           echo "previous_version=${current}" >> "$GITHUB_OUTPUT"
           echo "next_version=${next}" >> "$GITHUB_OUTPUT"
