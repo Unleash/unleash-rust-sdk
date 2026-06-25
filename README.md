@@ -6,10 +6,9 @@ You can use this client with [Unleash Enterprise](https://www.getunleash.io/pric
 
 ## Client overview
 
-The client is written using async rust. For communicating with the Unleash API
-surf or reqwest support is built in, or any async HTTP client can be provided by
-the user if they implement the thin trait used to abstract over the actual
-client.
+The client is written using async rust. For communicating with the Unleash API,
+reqwest support is built in, or any async HTTP client can be provided by the
+user if they implement the transport abstraction.
 
 Examples with async-std and tokio are in `crates/unleash-api-client/examples/`
 in the source tree. See the API docs for more feature information.
@@ -24,6 +23,8 @@ use the `ClientBuilder` and call the `strategy` method to register your custom
 strategy memoization function.
 
 The [crate documentation](https://docs.rs/unleash-api-client/latest/unleash_api_client/) should be consulted for more detail.
+
+Migrating from `0.15.0`? See [MIGRATION.md](MIGRATION.md).
 
 ### Configuration
 
