@@ -233,8 +233,8 @@ jobs:
             exit 0
           fi
 
-          cargo set-version --workspace --offline "${next_version}"
-          cargo update --workspace --offline
+          cargo set-version --workspace "${next_version}"
+          cargo update --workspace
 
           {
             echo "## Release ${next_version}"
