@@ -12,7 +12,7 @@ use arc_swap::ArcSwapOption;
 use chrono::Utc;
 use futures_timer::Delay;
 use log::{debug, trace, warn};
-use unleash_types::client_features::ClientFeatures as YggdrasilClientFeatures;
+use unleash_types::client_features::ClientFeatures;
 
 use unleash_yggdrasil::state::{EnrichedContext, ExternalResultsRef, PropertiesRef};
 use unleash_yggdrasil::{EngineState, UpdateMessage};
@@ -410,7 +410,7 @@ where
     /// poll_for_updates is the usual way in which memoize will be called.
     pub fn memoize(
         &self,
-        client_features: YggdrasilClientFeatures,
+        client_features: ClientFeatures,
     ) -> Result<Option<Metrics>, Box<dyn std::error::Error + Send + Sync>> {
         self.memoize_update_message(UpdateMessage::FullResponse(client_features))
     }
@@ -621,8 +621,7 @@ mod tests {
     use crate::strategy;
 
     use unleash_types::client_features::{
-        ClientFeature, ClientFeatures as YggdrasilClientFeatures, Payload as YggdrasilPayload,
-        Strategy as YggdrasilStrategy, Variant as YggdrasilVariant,
+        ClientFeature, ClientFeatures, Payload, Strategy, Variant as YggdrasilVariant,
     };
 
     #[derive(Default)]
@@ -641,8 +640,8 @@ mod tests {
         }
     }
 
-    fn strategy(name: &str, parameters: Option<HashMap<String, String>>) -> YggdrasilStrategy {
-        YggdrasilStrategy {
+    fn strategy(name: &str, parameters: Option<HashMap<String, String>>) -> Strategy {
+        Strategy {
             name: name.into(),
             sort_order: None,
             segments: None,
@@ -655,7 +654,7 @@ mod tests {
     fn feature(
         name: &str,
         enabled: bool,
-        strategies: Vec<YggdrasilStrategy>,
+        strategies: Vec<Strategy>,
         variants: Option<Vec<YggdrasilVariant>>,
     ) -> ClientFeature {
         ClientFeature {
@@ -668,8 +667,8 @@ mod tests {
         }
     }
 
-    fn features() -> YggdrasilClientFeatures {
-        YggdrasilClientFeatures {
+    fn features() -> ClientFeatures {
+        ClientFeatures {
             version: 1,
             features: vec![
                 feature("default", true, vec![strategy("default", None)], None),
@@ -883,7 +882,7 @@ mod tests {
             )
             .unwrap();
 
-        let f = YggdrasilClientFeatures {
+        let f = ClientFeatures {
             version: 1,
             features: vec![
                 feature("default", true, vec![strategy("default", None)], None),
@@ -925,7 +924,7 @@ mod tests {
             weight,
             weight_type: None,
             stickiness: None,
-            payload: Some(YggdrasilPayload {
+            payload: Some(Payload {
                 payload_type: payload_type.into(),
                 value: value.into(),
             }),
@@ -933,8 +932,8 @@ mod tests {
         }
     }
 
-    fn variant_features() -> YggdrasilClientFeatures {
-        YggdrasilClientFeatures {
+    fn variant_features() -> ClientFeatures {
+        ClientFeatures {
             version: 1,
             features: vec![
                 feature("disabled", false, vec![], None),
@@ -1294,7 +1293,7 @@ mod tests {
 
     #[test]
     fn yggdrasil_usage() {
-        let client_features = YggdrasilClientFeatures {
+        let client_features = ClientFeatures {
             ..Default::default()
         };
 

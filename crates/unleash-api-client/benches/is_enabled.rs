@@ -15,9 +15,7 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use maplit::hashmap;
 use rand::{distr::Alphanumeric, rng, Rng};
 use serde::Deserialize;
-use unleash_types::client_features::{
-    ClientFeature, ClientFeatures, Strategy as YggdrasilStrategy,
-};
+use unleash_types::client_features::{ClientFeature, ClientFeatures, Strategy};
 
 use unleash_api_client::client::{self, FeatureKey};
 use unleash_api_client::context::Context;
@@ -207,7 +205,7 @@ fn flexible_rollout_feature(name: String) -> ClientFeature {
         description: Some(name.clone()),
         enabled: true,
         name,
-        strategies: Some(vec![YggdrasilStrategy {
+        strategies: Some(vec![Strategy {
             name: "flexibleRollout".into(),
             sort_order: None,
             segments: None,
