@@ -18,7 +18,9 @@ use unleash_yggdrasil::state::{EnrichedContext, ExternalResultsRef, PropertiesRe
 use unleash_yggdrasil::{EngineState, UpdateMessage};
 use uuid::Uuid;
 
-use crate::api::{Metrics, MetricsBucket, MetricsMetadata, Registration, ToggleMetrics, features_endpoint};
+use crate::api::{
+    features_endpoint, Metrics, MetricsBucket, MetricsMetadata, Registration, ToggleMetrics,
+};
 use crate::context::Context;
 use crate::http::{Http, TransportRef};
 use crate::strategy;
