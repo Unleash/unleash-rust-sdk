@@ -3,8 +3,7 @@
 use std::collections::HashMap;
 use std::default::Default;
 
-use crate::version::get_sdk_version;
-use chrono::Utc;
+const RUSTC_VERSION: &str = env!("RUSTC_VERSION");
 use serde::{Deserialize, Serialize};
 
 pub fn features_endpoint(api_url: &str) -> String {
@@ -12,18 +11,39 @@ pub fn features_endpoint(api_url: &str) -> String {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MetricsMetadata {
+    pub(crate) platform_name: String,
+    pub(crate) platform_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) sdk_flavour: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) sdk_flavour_version: Option<String>,
+}
+
+impl Default for MetricsMetadata {
+    fn default() -> Self {
+        Self {
+            platform_name: "rust".into(),
+            platform_version: RUSTC_VERSION.into(),
+            sdk_flavour: None,
+            sdk_flavour_version: None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Registration {
-    #[serde(rename = "appName")]
     pub app_name: String,
-    #[serde(rename = "instanceId")]
     pub instance_id: String,
-    #[serde(rename = "connectionId")]
     pub connection_id: String,
-    #[serde(rename = "sdkVersion")]
     pub sdk_version: String,
     pub strategies: Vec<String>,
     pub started: chrono::DateTime<chrono::Utc>,
     pub interval: u64,
+    #[serde(flatten)]
+    pub(crate) metadata: MetricsMetadata,
 }
 
 impl Registration {
@@ -32,29 +52,15 @@ impl Registration {
     }
 }
 
-impl Default for Registration {
-    fn default() -> Self {
-        Self {
-            app_name: "".into(),
-            instance_id: "".into(),
-            connection_id: "".into(),
-            sdk_version: get_sdk_version().into(),
-            strategies: vec![],
-            started: Utc::now(),
-            interval: 15 * 1000,
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Metrics {
-    #[serde(rename = "appName")]
     pub app_name: String,
-    #[serde(rename = "instanceId")]
     pub instance_id: String,
-    #[serde(rename = "connectionId")]
     pub connection_id: String,
     pub bucket: MetricsBucket,
+    #[serde(flatten)]
+    pub(crate) metadata: MetricsMetadata,
 }
 
 impl Metrics {

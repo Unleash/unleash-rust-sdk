@@ -18,10 +18,11 @@ use unleash_yggdrasil::state::{EnrichedContext, ExternalResultsRef, PropertiesRe
 use unleash_yggdrasil::{EngineState, UpdateMessage};
 use uuid::Uuid;
 
-use crate::api::{features_endpoint, Metrics, MetricsBucket, Registration, ToggleMetrics};
+use crate::api::{Metrics, MetricsBucket, MetricsMetadata, Registration, ToggleMetrics, features_endpoint};
 use crate::context::Context;
 use crate::http::{Http, TransportRef};
 use crate::strategy;
+use crate::version::get_sdk_version;
 
 pub use unleash_api_client_macros::FeatureKey;
 
@@ -52,8 +53,9 @@ pub struct ClientBuilder {
     enable_str_features: bool,
     interval: u64,
     strategies: HashMap<String, strategy::Strategy>,
+    sdk_flavour: Option<String>,
+    sdk_flavour_version: Option<String>,
 }
-
 impl ClientBuilder {
     #[cfg(any(feature = "reqwest", feature = "reqwest-11", feature = "reqwest-13"))]
     pub fn into_client<F>(
@@ -105,6 +107,8 @@ impl ClientBuilder {
             ),
             cached_state: ArcSwapOption::from(None),
             strategies: Mutex::new(self.strategies),
+            flavour: self.sdk_flavour,
+            flavour_version: self.sdk_flavour_version,
         })
     }
 
@@ -127,6 +131,12 @@ impl ClientBuilder {
         self.strategies.insert(name.into(), strategy);
         self
     }
+
+    pub fn sdk_flavour(mut self, flavour: &str, flavour_version: &str) -> Self {
+        self.sdk_flavour = Some(flavour.into());
+        self.sdk_flavour_version = Some(flavour_version.into());
+        self
+    }
 }
 
 impl Default for ClientBuilder {
@@ -136,6 +146,8 @@ impl Default for ClientBuilder {
             enable_str_features: false,
             interval: 15000,
             strategies: Default::default(),
+            sdk_flavour: None,
+            sdk_flavour_version: None,
         }
     }
 }
@@ -197,6 +209,8 @@ where
     strategies: Mutex<HashMap<String, strategy::Strategy>>,
     // memoised state: feature_name: [callback, callback, ...]
     cached_state: ArcSwapOption<CachedState<F>>,
+    flavour: Option<String>,
+    flavour_version: Option<String>,
 }
 
 impl<F> Client<F>
@@ -490,6 +504,11 @@ where
                 instance_id: self.instance_id.clone(),
                 connection_id: self.connection_id.clone(),
                 bucket,
+                metadata: MetricsMetadata {
+                    sdk_flavour: self.flavour.clone(),
+                    sdk_flavour_version: self.flavour_version.clone(),
+                    ..Default::default()
+                },
             };
             Ok(Some(metrics))
         } else {
@@ -569,7 +588,13 @@ where
                 .keys()
                 .map(|s| s.to_owned())
                 .collect(),
-            ..Default::default()
+            sdk_version: get_sdk_version().into(),
+            started: Utc::now(),
+            metadata: MetricsMetadata {
+                sdk_flavour: self.flavour.clone(),
+                sdk_flavour_version: self.flavour_version.clone(),
+                ..Default::default()
+            },
         };
         let success = self
             .http
