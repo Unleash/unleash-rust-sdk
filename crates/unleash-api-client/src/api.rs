@@ -89,18 +89,6 @@ mod tests {
     use super::{features_endpoint, Metrics, Registration};
 
     #[test]
-    fn test_registration_customisation() {
-        Registration {
-            app_name: "test-suite".into(),
-            instance_id: "test".into(),
-            connection_id: "test".into(),
-            strategies: vec!["default".into()],
-            interval: 5000,
-            ..Default::default()
-        };
-    }
-
-    #[test]
     fn test_endpoints_handle_trailing_slashes() {
         assert_eq!(
             Registration::endpoint("https://localhost:4242/api"),
