@@ -15,11 +15,13 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use maplit::hashmap;
 use rand::{distr::Alphanumeric, rng, Rng};
 use serde::Deserialize;
-use unleash_types::client_features::ClientFeatures;
+use unleash_types::client_features::{
+    ClientFeature, ClientFeatures, Strategy as YggdrasilStrategy,
+};
 
-use unleash_api_client::api::{Feature, Features, Strategy};
 use unleash_api_client::client::{self, FeatureKey};
 use unleash_api_client::context::Context;
+use unleash_api_client::http::{Request, Response, Transport};
 
 // TODO: do a build.rs thing to determine available CPU count at build time for
 // optimal vec sizing.
@@ -157,51 +159,68 @@ enum UserFeatures {
     Unknown63,
 }
 
+#[derive(Default)]
+struct BenchTransport;
+
+#[async_trait::async_trait]
+impl Transport for BenchTransport {
+    async fn execute(&self, _request: Request) -> Result<Response, anyhow::Error> {
+        Ok(Response {
+            status: 200,
+            body: Vec::new(),
+        })
+    }
+}
+
 fn client(count: usize) -> client::Client<UserFeatures> {
     let client = client::ClientBuilder::default()
         .enable_string_features()
-        .into_client::<UserFeatures>("notused", "app", "test", None)
+        .into_client_with_transport::<UserFeatures>(
+            "notused",
+            "app",
+            "test",
+            None,
+            Arc::new(BenchTransport),
+        )
         .unwrap();
     let mut features = vec![];
     for i in 0..count {
         // once for enums, once for strings
         let name = format!("Flexible{i}");
-        features.push(Feature {
-            description: Some(name.clone()),
-            enabled: true,
-            created_at: None,
-            variants: None,
-            name,
-            strategies: vec![Strategy {
-                name: "flexibleRollout".into(),
-                parameters: Some(hashmap!["stickiness".into()=>"default".into(),
-                    "groupId".into()=>"flexible".into(), "rollout".into()=>"33".into()]),
-                ..Default::default()
-            }],
-        });
+        features.push(flexible_rollout_feature(name));
         let name = format!("flexible{i}");
-        features.push(Feature {
-            description: Some(name.clone()),
-            enabled: true,
-            created_at: None,
-            variants: None,
-            name,
-            strategies: vec![Strategy {
-                name: "flexibleRollout".into(),
-                parameters: Some(hashmap!["stickiness".into()=>"default".into(),
-                    "groupId".into()=>"flexible".into(), "rollout".into()=>"33".into()]),
-                ..Default::default()
-            }],
-        });
+        features.push(flexible_rollout_feature(name));
     }
-    let f = Features {
+    let client_features = ClientFeatures {
         version: 1,
         features,
+        segments: None,
+        query: None,
+        meta: None,
     };
-    let client_features: ClientFeatures =
-        serde_json::from_value(serde_json::to_value(f).unwrap()).unwrap();
     client.memoize(client_features).unwrap();
     client
+}
+
+fn flexible_rollout_feature(name: String) -> ClientFeature {
+    ClientFeature {
+        description: Some(name.clone()),
+        enabled: true,
+        name,
+        strategies: Some(vec![YggdrasilStrategy {
+            name: "flexibleRollout".into(),
+            sort_order: None,
+            segments: None,
+            constraints: None,
+            parameters: Some(hashmap![
+                "stickiness".into() => "default".into(),
+                "groupId".into() => "flexible".into(),
+                "rollout".into() => "33".into()
+            ]),
+            variants: None,
+        }]),
+        ..Default::default()
+    }
 }
 
 #[inline]

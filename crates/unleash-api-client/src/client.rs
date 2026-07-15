@@ -18,7 +18,7 @@ use unleash_yggdrasil::state::{EnrichedContext, ExternalResultsRef, PropertiesRe
 use unleash_yggdrasil::{EngineState, UpdateMessage};
 use uuid::Uuid;
 
-use crate::api::{Features, Metrics, MetricsBucket, Registration, ToggleMetrics};
+use crate::api::{features_endpoint, Metrics, MetricsBucket, Registration, ToggleMetrics};
 use crate::context::Context;
 use crate::http::{Http, TransportRef};
 use crate::strategy;
@@ -506,7 +506,7 @@ where
     /// stop_poll is called().
     pub async fn poll_for_updates(&self) {
         // TODO: add an event / pipe to permit immediate exit.
-        let endpoint = Features::endpoint(&self.api_url);
+        let endpoint = features_endpoint(&self.api_url);
         let metrics_endpoint = Metrics::endpoint(&self.api_url);
         self.polling.store(true, Ordering::Relaxed);
         loop {
