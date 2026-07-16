@@ -9,7 +9,7 @@ use unleash_yggdrasil::UpdateMessage;
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     task::block_on(async {
         let config = EnvironmentConfig::from_env()?;
-        let endpoint = format!("{}/client/features", config.api_url.trim_end_matches('/'));
+        let endpoint = unleash_api_client::api::features_endpoint(&config.api_url);
         let client = http::Http::new(
             http::default_transport(),
             config.app_name,
