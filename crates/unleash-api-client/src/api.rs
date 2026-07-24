@@ -15,9 +15,9 @@ pub fn features_endpoint(api_url: &str) -> String {
 pub(crate) struct MetricsMetadata {
     pub(crate) platform_name: String,
     pub(crate) platform_version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "sdkFlavor", skip_serializing_if = "Option::is_none")]
     pub(crate) sdk_flavour: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "sdkFlavorVersion", skip_serializing_if = "Option::is_none")]
     pub(crate) sdk_flavour_version: Option<String>,
 }
 
