@@ -22,11 +22,32 @@ use crate::api::{
     features_endpoint, Metrics, MetricsBucket, MetricsMetadata, Registration, ToggleMetrics,
 };
 use crate::context::Context;
-use crate::http::{Http, TransportRef};
+use crate::http::{Http, StatusError, TransportRef};
 use crate::strategy;
 use crate::version::get_sdk_version;
 
 pub use unleash_api_client_macros::FeatureKey;
+
+const MAX_BACKOFF_MULTIPLIER: u64 = 10;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PollAction {
+    Retry,
+    Backoff,
+    Stop,
+}
+
+fn poll_action(status: u16) -> PollAction {
+    match status {
+        401 | 403 => PollAction::Stop,
+        404 | 429 | 500 | 502 | 503 | 504 => PollAction::Backoff,
+        _ => PollAction::Retry,
+    }
+}
+
+fn poll_delay(interval: u64, failures: u64) -> Duration {
+    Duration::from_millis(interval.saturating_mul(failures + 1))
+}
 
 // ----------------- Variant
 
@@ -523,6 +544,11 @@ where
     /// Immediately and then every self.interval milliseconds the API server is
     /// queryed for features and the previous cycles metrics are uploaded.
     ///
+    /// When the server responds with 404, 429 or a 5xx status the interval is
+    /// multiplied by the number of consecutive failures (capped at 10x), and
+    /// shrinks again as requests succeed. A 401 or 403 response stops polling
+    /// altogether, since the API key will not start working on its own.
+    ///
     /// May be dropped, or will terminate at the next polling cycle after
     /// stop_poll is called().
     pub async fn poll_for_updates(&self) {
@@ -530,13 +556,17 @@ where
         let endpoint = features_endpoint(&self.api_url);
         let metrics_endpoint = Metrics::endpoint(&self.api_url);
         self.polling.store(true, Ordering::Relaxed);
+        let mut failures: u64 = 0;
         loop {
             debug!("poll: retrieving features");
-            match self
+            let result = self
                 .http
                 .get_json::<UpdateMessage>(&endpoint, Some(self.interval))
-                .await
-            {
+                .await;
+            if result.is_ok() {
+                failures = failures.saturating_sub(1);
+            }
+            match result {
                 Ok(update_message) => match self.memoize_update_message(update_message) {
                     Ok(None) => {}
                     Ok(Some(metrics)) => {
@@ -561,12 +591,25 @@ where
                         warn!("poll: failed to memoize features: {err:?}");
                     }
                 },
-                Err(err) => {
-                    warn!("poll: failed to retrieve features: {err:?}");
-                }
+                Err(err) => match err.downcast_ref::<StatusError>().map(|e| e.status) {
+                    Some(status) if poll_action(status) == PollAction::Stop => {
+                        warn!("poll: {endpoint} responded {status}, stopping polling");
+                        return;
+                    }
+                    Some(status) if poll_action(status) == PollAction::Backoff => {
+                        failures = (failures + 1).min(MAX_BACKOFF_MULTIPLIER);
+                        warn!(
+                            "poll: {endpoint} responded {status}, backing off to {}x interval",
+                            failures + 1
+                        );
+                    }
+                    _ => {
+                        warn!("poll: failed to retrieve features: {err:?}");
+                    }
+                },
             }
 
-            let duration = Duration::from_millis(self.interval);
+            let duration = poll_delay(self.interval, failures);
             debug!("poll: waiting {duration:?}");
             Delay::new(duration).await;
 
@@ -646,6 +689,8 @@ mod tests {
     use crate::client::FeatureKey;
     use crate::context::{Context, IPAddress};
     use crate::strategy;
+    use futures_timer::Delay;
+    use std::time::Duration;
 
     use unleash_types::client_features::{
         ClientFeature, ClientFeatures, Payload, Strategy, Variant as YggdrasilVariant,
@@ -1344,5 +1389,141 @@ mod tests {
 
         engine.count_toggle("test", true);
         engine.count_variant("test", "variantone");
+    }
+
+    #[test]
+    fn poll_action_by_status() {
+        use super::{poll_action, PollAction};
+        assert_eq!(poll_action(401), PollAction::Stop);
+        assert_eq!(poll_action(403), PollAction::Stop);
+        for status in [404, 429, 500, 502, 503, 504] {
+            assert_eq!(poll_action(status), PollAction::Backoff, "{status}");
+        }
+        assert_eq!(poll_action(400), PollAction::Retry);
+        assert_eq!(poll_action(418), PollAction::Retry);
+    }
+
+    #[test]
+    fn poll_delay_grows_with_failures() {
+        use super::poll_delay;
+        use std::time::Duration;
+        assert_eq!(poll_delay(100, 0), Duration::from_millis(100));
+        assert_eq!(poll_delay(100, 1), Duration::from_millis(200));
+        assert_eq!(poll_delay(100, 10), Duration::from_millis(1100));
+        assert_eq!(poll_delay(u64::MAX, 3), Duration::from_millis(u64::MAX));
+    }
+
+    struct ScriptedTransport {
+        statuses: std::sync::Mutex<std::vec::IntoIter<u16>>,
+        requests: std::sync::Mutex<Vec<std::time::Instant>>,
+    }
+
+    impl ScriptedTransport {
+        fn new(statuses: Vec<u16>) -> Arc<Self> {
+            Arc::new(Self {
+                statuses: std::sync::Mutex::new(statuses.into_iter()),
+                requests: std::sync::Mutex::new(Vec::new()),
+            })
+        }
+
+        fn gaps_ms(&self) -> Vec<u128> {
+            let requests = self.requests.lock().unwrap();
+            requests
+                .windows(2)
+                .map(|w| (w[1] - w[0]).as_millis())
+                .collect()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::http::Transport for ScriptedTransport {
+        async fn execute(
+            &self,
+            _request: crate::http::Request,
+        ) -> Result<crate::http::Response, anyhow::Error> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push(std::time::Instant::now());
+            let status = self.statuses.lock().unwrap().next().unwrap_or(200);
+            let body = if status == 200 {
+                serde_json::to_vec(&features()).unwrap()
+            } else {
+                Vec::new()
+            };
+            Ok(crate::http::Response { status, body })
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum PollFeatures {}
+
+    impl FeatureKey for PollFeatures {
+        fn name(self) -> &'static str {
+            match self {}
+        }
+    }
+
+    fn polling_client(
+        transport: Arc<ScriptedTransport>,
+        interval: u64,
+    ) -> super::Client<PollFeatures> {
+        ClientBuilder::default()
+            .interval(interval)
+            .disable_metric_submission()
+            .into_client_with_transport::<PollFeatures>(
+                "http://127.0.0.1:1/api/",
+                "foo",
+                "test",
+                None,
+                transport,
+            )
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn poll_backs_off_on_server_errors_and_recovers() {
+        let transport = ScriptedTransport::new(vec![429, 503, 200, 200, 200]);
+        let client = polling_client(transport.clone(), 20);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            futures::future::join(client.poll_for_updates(), async {
+                while transport.requests.lock().unwrap().len() < 6 {
+                    Delay::new(Duration::from_millis(5)).await;
+                }
+                client.stop_poll().await;
+            })
+            .await;
+        })
+        .await
+        .unwrap();
+
+        let gaps = transport.gaps_ms();
+        assert!(gaps.len() >= 5, "{gaps:?}");
+        assert!(
+            gaps[0] >= 40,
+            "after 429 expected 2x interval, got {gaps:?}"
+        );
+        assert!(
+            gaps[1] >= 60,
+            "after 503 expected 3x interval, got {gaps:?}"
+        );
+        assert!(
+            gaps[1] > gaps[3],
+            "expected recovery after 200s, got {gaps:?}"
+        );
+        assert!(
+            gaps[4] < 40,
+            "expected base interval after recovery, got {gaps:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_stops_on_unauthorized() {
+        let transport = ScriptedTransport::new(vec![401]);
+        let client = polling_client(transport.clone(), 20);
+        tokio::time::timeout(Duration::from_secs(2), client.poll_for_updates())
+            .await
+            .expect("poll_for_updates should return after a 401");
+        assert_eq!(transport.requests.lock().unwrap().len(), 1);
     }
 }

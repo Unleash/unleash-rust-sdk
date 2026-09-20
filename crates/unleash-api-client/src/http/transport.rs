@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -26,6 +27,19 @@ pub struct Response {
     pub status: u16,
     pub body: Vec<u8>,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatusError {
+    pub status: u16,
+}
+
+impl fmt::Display for StatusError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unexpected HTTP status {}", self.status)
+    }
+}
+
+impl std::error::Error for StatusError {}
 
 #[async_trait]
 pub trait Transport: Send + Sync + 'static {
@@ -76,6 +90,12 @@ impl<T: Transport> Http<T> {
     ) -> Result<R, anyhow::Error> {
         let request = self.request(Method::Get, endpoint, interval, None);
         let response = self.transport.execute(request).await?;
+        if !(200..300).contains(&response.status) {
+            return Err(StatusError {
+                status: response.status,
+            }
+            .into());
+        }
         Ok(serde_json::from_slice(&response.body)?)
     }
 
