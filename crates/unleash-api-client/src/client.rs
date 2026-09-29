@@ -22,7 +22,7 @@ use crate::api::{
     features_endpoint, Metrics, MetricsBucket, MetricsMetadata, Registration, ToggleMetrics,
 };
 use crate::context::Context;
-use crate::http::{Http, StatusError, TransportRef};
+use crate::http::{GetError, Http, TransportRef};
 use crate::strategy;
 use crate::version::get_sdk_version;
 
@@ -544,10 +544,14 @@ where
     /// Immediately and then every self.interval milliseconds the API server is
     /// queryed for features and the previous cycles metrics are uploaded.
     ///
-    /// When the server responds with 404, 429 or a 5xx status the interval is
-    /// multiplied by the number of consecutive failures (capped at 10x), and
-    /// shrinks again as requests succeed. A 401 or 403 response stops polling
-    /// altogether, since the API key will not start working on its own.
+    /// When the server responds with 404, 429, 500, 502, 503 or 504 the poll
+    /// interval is multiplied by (consecutive_failures + 1), where the failure
+    /// count is capped at 10 — so the interval grows up to 11x the base and
+    /// shrinks again as requests succeed. Other error statuses (for example
+    /// 501 or 505), transport errors and deserialization errors retry at the
+    /// base interval. A 304 Not Modified is treated as an up-to-date success. A
+    /// 401 or 403 response stops polling altogether, since the API key will not
+    /// start working on its own.
     ///
     /// May be dropped, or will terminate at the next polling cycle after
     /// stop_poll is called().
@@ -563,50 +567,68 @@ where
                 .http
                 .get_json::<UpdateMessage>(&endpoint, Some(self.interval))
                 .await;
-            if result.is_ok() {
-                failures = failures.saturating_sub(1);
-            }
             match result {
-                Ok(update_message) => match self.memoize_update_message(update_message) {
-                    Ok(None) => {}
-                    Ok(Some(metrics)) => {
-                        if !self.disable_metric_submission {
-                            let mut metrics_uploaded = false;
-                            let res = self
-                                .http
-                                .post_json(&metrics_endpoint, metrics, Some(self.interval))
-                                .await;
-                            if let Ok(successful) = res {
-                                if successful {
-                                    metrics_uploaded = true;
-                                    debug!("poll: uploaded feature metrics")
+                Ok(update_message) => {
+                    failures = failures.saturating_sub(1);
+                    match self.memoize_update_message(update_message) {
+                        Ok(None) => {}
+                        Ok(Some(metrics)) => {
+                            if !self.disable_metric_submission {
+                                let mut metrics_uploaded = false;
+                                let res = self
+                                    .http
+                                    .post_json(&metrics_endpoint, metrics, Some(self.interval))
+                                    .await;
+                                if let Ok(successful) = res {
+                                    if successful {
+                                        metrics_uploaded = true;
+                                        debug!("poll: uploaded feature metrics")
+                                    }
+                                }
+                                if !metrics_uploaded {
+                                    warn!("poll: error uploading feature metrics");
                                 }
                             }
-                            if !metrics_uploaded {
-                                warn!("poll: error uploading feature metrics");
-                            }
+                        }
+                        Err(err) => {
+                            warn!("poll: failed to memoize features: {err:?}");
                         }
                     }
-                    Err(err) => {
-                        warn!("poll: failed to memoize features: {err:?}");
-                    }
-                },
-                Err(err) => match err.downcast_ref::<StatusError>().map(|e| e.status) {
-                    Some(status) if poll_action(status) == PollAction::Stop => {
+                }
+                // 304 Not Modified: the data we already hold is still current.
+                // Nothing to memoize, and it is not a failure, so recover the
+                // backoff the same way a 2xx would.
+                Err(GetError::NotModified) => {
+                    failures = failures.saturating_sub(1);
+                    debug!("poll: {endpoint} responded 304, features unchanged");
+                }
+                Err(GetError::UnexpectedStatus(status)) => match poll_action(status) {
+                    PollAction::Stop => {
                         warn!("poll: {endpoint} responded {status}, stopping polling");
+                        self.polling.store(false, Ordering::Relaxed);
                         return;
                     }
-                    Some(status) if poll_action(status) == PollAction::Backoff => {
+                    PollAction::Backoff => {
                         failures = (failures + 1).min(MAX_BACKOFF_MULTIPLIER);
                         warn!(
                             "poll: {endpoint} responded {status}, backing off to {}x interval",
                             failures + 1
                         );
                     }
-                    _ => {
-                        warn!("poll: failed to retrieve features: {err:?}");
+                    PollAction::Retry => {
+                        // A status we do not back off on: retry at the base
+                        // interval rather than leaving an earlier backoff in
+                        // place.
+                        failures = 0;
+                        warn!("poll: {endpoint} responded {status}, retrying at base interval");
                     }
                 },
+                // Transport or deserialization failure: retry at the base
+                // interval instead of inheriting a stale backoff multiplier.
+                Err(err) => {
+                    failures = 0;
+                    warn!("poll: failed to retrieve features: {err:?}");
+                }
             }
 
             let duration = poll_delay(self.interval, failures);
@@ -654,11 +676,17 @@ where
 
     /// stop the poll_for_updates() function.
     ///
-    /// If poll is not running, will wait-loop until poll_for_updates is
-    /// running, then signal it to stop, then return. Will wait for ever if
-    /// poll_for_updates never starts running.
+    /// Signals a running poll_for_updates loop to stop, then returns. If
+    /// polling has already stopped (or never started) this returns
+    /// immediately, so it is safe to call after the loop has exited on its own
+    /// (for example after a 401/403 stopped it). If a poll loop is mid-cycle it
+    /// will terminate at the next cycle.
     pub async fn stop_poll(&self) {
         loop {
+            // Already stopped (or never started): nothing to wait for.
+            if !self.polling.load(Ordering::Relaxed) {
+                return;
+            }
             match self
                 .polling
                 .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
@@ -1525,5 +1553,93 @@ mod tests {
             .await
             .expect("poll_for_updates should return after a 401");
         assert_eq!(transport.requests.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn poll_clears_polling_flag_when_stopped_by_status() {
+        // After the loop returns because of a Stop status, a caller that then
+        // invokes stop_poll() must not hang forever waiting for the flag to
+        // clear. poll_for_updates is responsible for clearing it on the way out.
+        let transport = ScriptedTransport::new(vec![403]);
+        let client = polling_client(transport.clone(), 20);
+        tokio::time::timeout(Duration::from_secs(2), client.poll_for_updates())
+            .await
+            .expect("poll_for_updates should return after a 403");
+        // If the flag was left set this stop_poll would never resolve.
+        tokio::time::timeout(Duration::from_secs(2), client.stop_poll())
+            .await
+            .expect("stop_poll must return because polling was already cleared");
+    }
+
+    #[tokio::test]
+    async fn poll_treats_304_as_unchanged_success() {
+        // 304 Not Modified must not be treated as an error: it should neither
+        // back off nor stop polling, and the loop should keep running at the
+        // base interval.
+        let transport = ScriptedTransport::new(vec![304, 304, 200]);
+        let client = polling_client(transport.clone(), 20);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            futures::future::join(client.poll_for_updates(), async {
+                while transport.requests.lock().unwrap().len() < 3 {
+                    Delay::new(Duration::from_millis(5)).await;
+                }
+                client.stop_poll().await;
+            })
+            .await;
+        })
+        .await
+        .unwrap();
+
+        let gaps = transport.gaps_ms();
+        assert!(gaps.len() >= 2, "{gaps:?}");
+        // No backoff after 304s: gaps stay near the base 20ms interval, well
+        // under the 2x (40ms) that a backoff status would have produced.
+        assert!(
+            gaps[0] < 40 && gaps[1] < 40,
+            "304 must not back off, got {gaps:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_resets_backoff_on_non_backoff_status() {
+        // A backoff status raises the multiplier; a following non-backoff
+        // status (e.g. 501) must retry at the base interval rather than
+        // inheriting the earlier backoff.
+        let transport = ScriptedTransport::new(vec![503, 501, 200, 200]);
+        let client = polling_client(transport.clone(), 20);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            futures::future::join(client.poll_for_updates(), async {
+                while transport.requests.lock().unwrap().len() < 4 {
+                    Delay::new(Duration::from_millis(5)).await;
+                }
+                client.stop_poll().await;
+            })
+            .await;
+        })
+        .await
+        .unwrap();
+
+        let gaps = transport.gaps_ms();
+        assert!(gaps.len() >= 2, "{gaps:?}");
+        // gaps[0] follows the 503 (2x backoff ~40ms). gaps[1] follows the 501
+        // and must be back at the base interval, not a further-grown backoff.
+        assert!(
+            gaps[0] >= 40,
+            "after 503 expected 2x interval, got {gaps:?}"
+        );
+        assert!(
+            gaps[1] < 40,
+            "after non-backoff 501 expected base interval, got {gaps:?}"
+        );
+    }
+
+    #[test]
+    fn get_error_carries_status_without_downcasting() {
+        use crate::http::GetError;
+        match GetError::UnexpectedStatus(429) {
+            GetError::UnexpectedStatus(status) => assert_eq!(status, 429),
+            other => panic!("expected UnexpectedStatus, got {other:?}"),
+        }
+        assert!(matches!(GetError::NotModified, GetError::NotModified));
     }
 }

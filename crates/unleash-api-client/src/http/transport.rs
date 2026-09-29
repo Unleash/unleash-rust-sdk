@@ -28,18 +28,44 @@ pub struct Response {
     pub body: Vec<u8>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StatusError {
-    pub status: u16,
+/// Error returned by [`Http::get_json`].
+///
+/// The status code is carried as a first-class variant so callers can react to
+/// it directly (matching `UnexpectedStatus`/`NotModified`) instead of
+/// downcasting an opaque error and losing the type information.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum GetError {
+    /// The server returned 304 Not Modified: the previously fetched data is
+    /// still current, so there is nothing new to deserialize.
+    NotModified,
+    /// The server returned a status that is neither a success (2xx) nor 304.
+    UnexpectedStatus(u16),
+    /// The request could not be executed by the transport.
+    Transport(anyhow::Error),
+    /// The response body could not be deserialized into the expected type.
+    Deserialize(serde_json::Error),
 }
 
-impl fmt::Display for StatusError {
+impl fmt::Display for GetError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "unexpected HTTP status {}", self.status)
+        match self {
+            GetError::NotModified => write!(f, "HTTP 304 Not Modified"),
+            GetError::UnexpectedStatus(status) => write!(f, "unexpected HTTP status {status}"),
+            GetError::Transport(err) => write!(f, "transport error: {err}"),
+            GetError::Deserialize(err) => write!(f, "failed to deserialize response body: {err}"),
+        }
     }
 }
 
-impl std::error::Error for StatusError {}
+impl std::error::Error for GetError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            GetError::Deserialize(err) => Some(err),
+            _ => None,
+        }
+    }
+}
 
 #[async_trait]
 pub trait Transport: Send + Sync + 'static {
@@ -87,16 +113,18 @@ impl<T: Transport> Http<T> {
         &self,
         endpoint: &str,
         interval: Option<u64>,
-    ) -> Result<R, anyhow::Error> {
+    ) -> Result<R, GetError> {
         let request = self.request(Method::Get, endpoint, interval, None);
-        let response = self.transport.execute(request).await?;
-        if !(200..300).contains(&response.status) {
-            return Err(StatusError {
-                status: response.status,
-            }
-            .into());
+        let response = self
+            .transport
+            .execute(request)
+            .await
+            .map_err(GetError::Transport)?;
+        match response.status {
+            200..=299 => serde_json::from_slice(&response.body).map_err(GetError::Deserialize),
+            304 => Err(GetError::NotModified),
+            status => Err(GetError::UnexpectedStatus(status)),
         }
-        Ok(serde_json::from_slice(&response.body)?)
     }
 
     pub async fn post_json<B: Serialize + Sync>(
