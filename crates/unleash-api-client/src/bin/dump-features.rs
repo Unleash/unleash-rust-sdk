@@ -17,7 +17,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Uuid::new_v4().to_string(),
             config.secret,
         );
-        let res: UpdateMessage = client.get_json(&endpoint, None).await?;
+        let res = client
+            .get_json::<UpdateMessage>(&endpoint, None, Vec::new())
+            .await?
+            .value;
         dbg!(res);
         Ok(())
     })

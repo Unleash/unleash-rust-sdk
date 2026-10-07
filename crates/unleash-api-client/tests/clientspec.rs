@@ -117,7 +117,7 @@ mod tests {
                 .into_client::<NoFeatures>("http://127.0.0.1:1234/", "foo", "test", None)
                 .unwrap();
             log::info!("Using update message");
-            c.memoize_update_message(suite.state).unwrap();
+            c.memoize_update_message(suite.state);
 
             match suite.tests {
                 Tests::Tests(tests) => {
