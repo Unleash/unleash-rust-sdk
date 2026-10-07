@@ -250,6 +250,76 @@ impl<F> Client<F>
 where
     F: FeatureKey,
 {
+    fn metrics_from_cache(
+        &self,
+        cache: &CachedState<F>,
+        now: chrono::DateTime<Utc>,
+    ) -> Option<Metrics> {
+        let mut engine_state = lock_engine(&cache.engine_state);
+        let yggdrasil_metrics = engine_state.get_metrics(now)?;
+
+        let bucket = MetricsBucket {
+            start: yggdrasil_metrics.start,
+            stop: yggdrasil_metrics.stop,
+            toggles: yggdrasil_metrics
+                .toggles
+                .into_iter()
+                .map(|(name, toggle)| {
+                    (
+                        name,
+                        ToggleMetrics {
+                            yes: toggle.yes as u64,
+                            no: toggle.no as u64,
+                            variants: toggle
+                                .variants
+                                .into_iter()
+                                .map(|(variant, count)| (variant, count as u64))
+                                .collect(),
+                        },
+                    )
+                })
+                .collect(),
+        };
+        Some(Metrics {
+            app_name: self.app_name.clone(),
+            instance_id: self.instance_id.clone(),
+            connection_id: self.connection_id.clone(),
+            bucket,
+            metadata: MetricsMetadata {
+                sdk_flavour: self.flavour.clone(),
+                sdk_flavour_version: self.flavour_version.clone(),
+                ..Default::default()
+            },
+        })
+    }
+
+    fn collect_metrics(&self) -> Option<Metrics> {
+        let cache = self.cached_state.load();
+        let cache = cache.as_ref()?;
+        self.metrics_from_cache(cache, Utc::now())
+    }
+
+    async fn upload_metrics(&self, metrics_endpoint: &str, metrics: Metrics) {
+        if self.disable_metric_submission {
+            return;
+        }
+
+        let mut metrics_uploaded = false;
+        let res = self
+            .http
+            .post_json(metrics_endpoint, metrics, Some(self.interval))
+            .await;
+        if let Ok(successful) = res {
+            if successful {
+                metrics_uploaded = true;
+                debug!("poll: uploaded feature metrics")
+            }
+        }
+        if !metrics_uploaded {
+            warn!("poll: error uploading feature metrics");
+        }
+    }
+
     /// The cached state can be accessed. It may be uninitialised, and
     /// represents a point in time snapshot: subsequent calls may have wound the
     /// metrics back, entirely lost string features etc.
@@ -499,47 +569,7 @@ where
         // Now we have the new cache compiled, swap it in.
         let old = self.cached_state.swap(Some(Arc::new(new_cache)));
         trace!("memoize: swapped memoized state in");
-        if let Some(old) = old {
-            let mut engine_state = lock_engine(&old.engine_state);
-            let yggdrasil_metrics = engine_state.get_metrics(now)?;
-
-            let bucket = MetricsBucket {
-                start: yggdrasil_metrics.start,
-                stop: yggdrasil_metrics.stop,
-                toggles: yggdrasil_metrics
-                    .toggles
-                    .into_iter()
-                    .map(|(name, toggle)| {
-                        (
-                            name,
-                            ToggleMetrics {
-                                yes: toggle.yes as u64,
-                                no: toggle.no as u64,
-                                variants: toggle
-                                    .variants
-                                    .into_iter()
-                                    .map(|(variant, count)| (variant, count as u64))
-                                    .collect(),
-                            },
-                        )
-                    })
-                    .collect(),
-            };
-            let metrics = Metrics {
-                app_name: self.app_name.clone(),
-                instance_id: self.instance_id.clone(),
-                connection_id: self.connection_id.clone(),
-                bucket,
-                metadata: MetricsMetadata {
-                    sdk_flavour: self.flavour.clone(),
-                    sdk_flavour_version: self.flavour_version.clone(),
-                    ..Default::default()
-                },
-            };
-            Some(metrics)
-        } else {
-            None
-        }
+        old.and_then(|old| self.metrics_from_cache(&old, now))
     }
 
     /// Query the API endpoint for features and push metrics
@@ -584,22 +614,7 @@ where
                     }
                     failures = failures.saturating_sub(1);
                     if let Some(metrics) = self.memoize_update_message(response.value) {
-                        if !self.disable_metric_submission {
-                            let mut metrics_uploaded = false;
-                            let res = self
-                                .http
-                                .post_json(&metrics_endpoint, metrics, Some(self.interval))
-                                .await;
-                            if let Ok(successful) = res {
-                                if successful {
-                                    metrics_uploaded = true;
-                                    debug!("poll: uploaded feature metrics")
-                                }
-                            }
-                            if !metrics_uploaded {
-                                warn!("poll: error uploading feature metrics");
-                            }
-                        }
+                        self.upload_metrics(&metrics_endpoint, metrics).await;
                     }
                 }
                 // 304 Not Modified: the data we already hold is still current.
@@ -608,6 +623,9 @@ where
                 Err(GetError::NotModified) => {
                     failures = failures.saturating_sub(1);
                     debug!("poll: {endpoint} responded 304, features unchanged");
+                    if let Some(metrics) = self.collect_metrics() {
+                        self.upload_metrics(&metrics_endpoint, metrics).await;
+                    }
                 }
                 Err(GetError::UnexpectedStatus(status)) => match poll_action(status) {
                     PollAction::Stop => {
@@ -1453,6 +1471,7 @@ mod tests {
         statuses: std::sync::Mutex<std::vec::IntoIter<u16>>,
         requests: std::sync::Mutex<Vec<std::time::Instant>>,
         request_headers: std::sync::Mutex<Vec<Vec<(String, String)>>>,
+        metric_posts: std::sync::Mutex<Vec<Vec<u8>>>,
     }
 
     impl ScriptedTransport {
@@ -1461,6 +1480,7 @@ mod tests {
                 statuses: std::sync::Mutex::new(statuses.into_iter()),
                 requests: std::sync::Mutex::new(Vec::new()),
                 request_headers: std::sync::Mutex::new(Vec::new()),
+                metric_posts: std::sync::Mutex::new(Vec::new()),
             })
         }
 
@@ -1475,6 +1495,10 @@ mod tests {
         fn request_headers(&self) -> Vec<Vec<(String, String)>> {
             self.request_headers.lock().unwrap().clone()
         }
+
+        fn metric_posts(&self) -> Vec<Vec<u8>> {
+            self.metric_posts.lock().unwrap().clone()
+        }
     }
 
     #[async_trait::async_trait]
@@ -1483,6 +1507,18 @@ mod tests {
             &self,
             request: crate::http::Request,
         ) -> Result<crate::http::Response, anyhow::Error> {
+            if request.method == crate::http::Method::Post {
+                self.metric_posts
+                    .lock()
+                    .unwrap()
+                    .push(request.body.unwrap_or_default());
+                return Ok(crate::http::Response {
+                    status: 202,
+                    headers: Vec::new(),
+                    body: Vec::new(),
+                });
+            }
+
             self.requests
                 .lock()
                 .unwrap()
@@ -1509,11 +1545,15 @@ mod tests {
     }
 
     #[derive(Debug, Clone, Copy)]
-    enum PollFeatures {}
+    enum PollFeatures {
+        Default,
+    }
 
     impl FeatureKey for PollFeatures {
         fn name(self) -> &'static str {
-            match self {}
+            match self {
+                PollFeatures::Default => "default",
+            }
         }
     }
 
@@ -1532,6 +1572,45 @@ mod tests {
                 transport,
             )
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn poll_uploads_metrics_after_not_modified() {
+        let transport = ScriptedTransport::new(vec![200, 304]);
+        let client = ClientBuilder::default()
+            .interval(20)
+            .into_client_with_transport::<PollFeatures>(
+                "http://127.0.0.1:1/api/",
+                "foo",
+                "test",
+                None,
+                transport.clone(),
+            )
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            futures::future::join(client.poll_for_updates(), async {
+                while transport.requests.lock().unwrap().is_empty() {
+                    Delay::new(Duration::from_millis(5)).await;
+                }
+
+                assert!(client.is_enabled(PollFeatures::Default, None, false));
+
+                while transport.metric_posts.lock().unwrap().is_empty() {
+                    Delay::new(Duration::from_millis(5)).await;
+                }
+                client.stop_poll().await;
+            })
+            .await;
+        })
+        .await
+        .unwrap();
+
+        let posts = transport.metric_posts();
+        assert_eq!(posts.len(), 1);
+        let metrics: super::Metrics = serde_json::from_slice(&posts[0]).unwrap();
+        let default_metrics = metrics.bucket.toggles.get("default").unwrap();
+        assert_eq!(default_metrics.yes, 1);
+        assert_eq!(default_metrics.no, 0);
     }
 
     #[tokio::test]
