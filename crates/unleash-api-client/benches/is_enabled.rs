@@ -165,6 +165,7 @@ impl Transport for BenchTransport {
     async fn execute(&self, _request: Request) -> Result<Response, anyhow::Error> {
         Ok(Response {
             status: 200,
+            headers: Vec::new(),
             body: Vec::new(),
         })
     }
@@ -196,7 +197,7 @@ fn client(count: usize) -> client::Client<UserFeatures> {
         query: None,
         meta: None,
     };
-    client.memoize(client_features).unwrap();
+    client.memoize(client_features);
     client
 }
 

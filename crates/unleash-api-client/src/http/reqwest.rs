@@ -48,9 +48,23 @@ impl Transport for ReqwestTransport {
 
         let response = builder.send().await?;
         let status = response.status().as_u16();
+        let headers = response
+            .headers()
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|value| (name.as_str().to_string(), value.to_string()))
+            })
+            .collect();
         let body = response.bytes().await?.to_vec();
 
-        Ok(Response { status, body })
+        Ok(Response {
+            status,
+            headers,
+            body,
+        })
     }
 }
 

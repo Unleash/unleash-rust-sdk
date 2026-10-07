@@ -49,6 +49,13 @@ fn poll_delay(interval: u64, failures: u64) -> Duration {
     Duration::from_millis(interval.saturating_mul(failures + 1))
 }
 
+fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(header_name, _)| header_name.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
 // ----------------- Variant
 
 /// Variant is returned from `Client.get_variant` and is a cut down and
@@ -79,6 +86,7 @@ pub struct ClientBuilder {
     sdk_flavour: Option<String>,
     sdk_flavour_version: Option<String>,
 }
+
 impl ClientBuilder {
     #[cfg(any(feature = "reqwest", feature = "reqwest-11", feature = "reqwest-13"))]
     pub fn into_client<F>(
@@ -129,6 +137,7 @@ impl ClientBuilder {
                 authorization,
             ),
             cached_state: ArcSwapOption::from(None),
+            feature_etag: Mutex::new(None),
             strategies: Mutex::new(self.strategies),
             flavour: self.sdk_flavour,
             flavour_version: self.sdk_flavour_version,
@@ -232,6 +241,7 @@ where
     strategies: Mutex<HashMap<String, strategy::Strategy>>,
     // memoised state: feature_name: [callback, callback, ...]
     cached_state: ArcSwapOption<CachedState<F>>,
+    feature_etag: Mutex<Option<String>>,
     flavour: Option<String>,
     flavour_version: Option<String>,
 }
@@ -445,17 +455,11 @@ where
     ///
     /// Note that this is primarily public to facilitate benchmarking;
     /// poll_for_updates is the usual way in which memoize will be called.
-    pub fn memoize(
-        &self,
-        client_features: ClientFeatures,
-    ) -> Result<Option<Metrics>, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn memoize(&self, client_features: ClientFeatures) -> Option<Metrics> {
         self.memoize_update_message(UpdateMessage::FullResponse(client_features))
     }
 
-    pub fn memoize_update_message(
-        &self,
-        update_message: UpdateMessage,
-    ) -> Result<Option<Metrics>, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn memoize_update_message(&self, update_message: UpdateMessage) -> Option<Metrics> {
         let now = Utc::now();
 
         let prior_state = self
@@ -497,9 +501,8 @@ where
         trace!("memoize: swapped memoized state in");
         if let Some(old) = old {
             let mut engine_state = lock_engine(&old.engine_state);
-            let Some(yggdrasil_metrics) = engine_state.get_metrics(now) else {
-                return Ok(None);
-            };
+            let yggdrasil_metrics = engine_state.get_metrics(now)?;
+
             let bucket = MetricsBucket {
                 start: yggdrasil_metrics.start,
                 stop: yggdrasil_metrics.stop,
@@ -533,9 +536,9 @@ where
                     ..Default::default()
                 },
             };
-            Ok(Some(metrics))
+            Some(metrics)
         } else {
-            Ok(None)
+            None
         }
     }
 
@@ -563,35 +566,39 @@ where
         let mut failures: u64 = 0;
         loop {
             debug!("poll: retrieving features");
+            let headers = self
+                .feature_etag
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|etag| vec![("If-None-Match".to_string(), etag.clone())])
+                .unwrap_or_default();
             let result = self
                 .http
-                .get_json::<UpdateMessage>(&endpoint, Some(self.interval))
+                .get_json::<UpdateMessage>(&endpoint, Some(self.interval), headers)
                 .await;
             match result {
-                Ok(update_message) => {
+                Ok(response) => {
+                    if let Some(etag) = header_value(&response.headers, "etag") {
+                        *self.feature_etag.lock().unwrap() = Some(etag.to_string());
+                    }
                     failures = failures.saturating_sub(1);
-                    match self.memoize_update_message(update_message) {
-                        Ok(None) => {}
-                        Ok(Some(metrics)) => {
-                            if !self.disable_metric_submission {
-                                let mut metrics_uploaded = false;
-                                let res = self
-                                    .http
-                                    .post_json(&metrics_endpoint, metrics, Some(self.interval))
-                                    .await;
-                                if let Ok(successful) = res {
-                                    if successful {
-                                        metrics_uploaded = true;
-                                        debug!("poll: uploaded feature metrics")
-                                    }
-                                }
-                                if !metrics_uploaded {
-                                    warn!("poll: error uploading feature metrics");
+                    if let Some(metrics) = self.memoize_update_message(response.value) {
+                        if !self.disable_metric_submission {
+                            let mut metrics_uploaded = false;
+                            let res = self
+                                .http
+                                .post_json(&metrics_endpoint, metrics, Some(self.interval))
+                                .await;
+                            if let Ok(successful) = res {
+                                if successful {
+                                    metrics_uploaded = true;
+                                    debug!("poll: uploaded feature metrics")
                                 }
                             }
-                        }
-                        Err(err) => {
-                            warn!("poll: failed to memoize features: {err:?}");
+                            if !metrics_uploaded {
+                                warn!("poll: error uploading feature metrics");
+                            }
                         }
                     }
                 }
@@ -735,6 +742,7 @@ mod tests {
         ) -> Result<crate::http::Response, anyhow::Error> {
             Ok(crate::http::Response {
                 status: 200,
+                headers: Vec::new(),
                 body: Vec::new(),
             })
         }
@@ -845,7 +853,7 @@ mod tests {
             )
             .unwrap();
 
-        c.memoize(f).unwrap();
+        c.memoize(f);
         let present: Context = Context {
             user_id: Some("present".into()),
             ..Default::default()
@@ -901,7 +909,7 @@ mod tests {
             )
             .unwrap();
 
-        c.memoize(f).unwrap();
+        c.memoize(f);
         let present: Context = Context {
             user_id: Some("present".into()),
             ..Default::default()
@@ -1000,7 +1008,7 @@ mod tests {
             query: None,
             meta: None,
         };
-        client.memoize(f).unwrap();
+        client.memoize(f);
         let present: Context = Context {
             user_id: Some("cba".into()),
             ..Default::default()
@@ -1101,7 +1109,7 @@ mod tests {
             )
             .unwrap();
 
-        c.memoize(f).unwrap();
+        c.memoize(f);
 
         // disabled should be disabled
         let variant = Variant::disabled();
@@ -1187,7 +1195,7 @@ mod tests {
             )
             .unwrap();
 
-        c.memoize(f).unwrap();
+        c.memoize(f);
 
         // disabled should be disabled
         let variant = Variant::disabled();
@@ -1277,7 +1285,7 @@ mod tests {
             )
             .unwrap();
 
-        c.memoize(f).unwrap();
+        c.memoize(f);
 
         c.get_variant(UserFeatures::disabled, &Context::default());
         c.get_variant(UserFeatures::novariants, &Context::default());
@@ -1294,7 +1302,7 @@ mod tests {
         c.get_variant(UserFeatures::two, &session1);
         c.get_variant(UserFeatures::two, &host1);
 
-        let metrics = c.memoize(variant_features()).unwrap().unwrap();
+        let metrics = c.memoize(variant_features()).unwrap();
         let variant_count = |feature_name, variant_name| -> u64 {
             metrics
                 .bucket
@@ -1346,7 +1354,7 @@ mod tests {
             )
             .unwrap();
 
-        c.memoize(f).unwrap();
+        c.memoize(f);
 
         c.get_variant_str("disabled", &Context::default());
         c.get_variant_str("novariants", &Context::default());
@@ -1367,7 +1375,7 @@ mod tests {
         c.get_variant_str("nonexistent-feature", &Context::default());
         c.get_variant_str("nonexistent-feature", &Context::default());
 
-        let metrics = c.memoize(variant_features()).unwrap().unwrap();
+        let metrics = c.memoize(variant_features()).unwrap();
         let variant_count = |feature_name, variant_name| -> u64 {
             metrics
                 .bucket
@@ -1444,6 +1452,7 @@ mod tests {
     struct ScriptedTransport {
         statuses: std::sync::Mutex<std::vec::IntoIter<u16>>,
         requests: std::sync::Mutex<Vec<std::time::Instant>>,
+        request_headers: std::sync::Mutex<Vec<Vec<(String, String)>>>,
     }
 
     impl ScriptedTransport {
@@ -1451,6 +1460,7 @@ mod tests {
             Arc::new(Self {
                 statuses: std::sync::Mutex::new(statuses.into_iter()),
                 requests: std::sync::Mutex::new(Vec::new()),
+                request_headers: std::sync::Mutex::new(Vec::new()),
             })
         }
 
@@ -1461,25 +1471,40 @@ mod tests {
                 .map(|w| (w[1] - w[0]).as_millis())
                 .collect()
         }
+
+        fn request_headers(&self) -> Vec<Vec<(String, String)>> {
+            self.request_headers.lock().unwrap().clone()
+        }
     }
 
     #[async_trait::async_trait]
     impl crate::http::Transport for ScriptedTransport {
         async fn execute(
             &self,
-            _request: crate::http::Request,
+            request: crate::http::Request,
         ) -> Result<crate::http::Response, anyhow::Error> {
             self.requests
                 .lock()
                 .unwrap()
                 .push(std::time::Instant::now());
+            self.request_headers.lock().unwrap().push(request.headers);
+            let request_count = self.requests.lock().unwrap().len();
             let status = self.statuses.lock().unwrap().next().unwrap_or(200);
             let body = if status == 200 {
                 serde_json::to_vec(&features()).unwrap()
             } else {
                 Vec::new()
             };
-            Ok(crate::http::Response { status, body })
+            let headers = if status == 200 {
+                vec![("etag".to_string(), format!("etag-{request_count}"))]
+            } else {
+                Vec::new()
+            };
+            Ok(crate::http::Response {
+                status,
+                headers,
+                body,
+            })
         }
     }
 
@@ -1597,6 +1622,39 @@ mod tests {
         assert!(
             gaps[0] < 40 && gaps[1] < 40,
             "304 must not back off, got {gaps:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_sends_if_none_match_after_feature_etag() {
+        let transport = ScriptedTransport::new(vec![200, 304, 200, 304]);
+        let client = polling_client(transport.clone(), 20);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            futures::future::join(client.poll_for_updates(), async {
+                while transport.requests.lock().unwrap().len() < 4 {
+                    Delay::new(Duration::from_millis(5)).await;
+                }
+                client.stop_poll().await;
+            })
+            .await;
+        })
+        .await
+        .unwrap();
+
+        let headers = transport.request_headers();
+        assert_eq!(headers.len(), 4);
+        assert_eq!(super::header_value(&headers[0], "if-none-match"), None);
+        assert_eq!(
+            super::header_value(&headers[1], "if-none-match"),
+            Some("etag-1")
+        );
+        assert_eq!(
+            super::header_value(&headers[2], "if-none-match"),
+            Some("etag-1")
+        );
+        assert_eq!(
+            super::header_value(&headers[3], "if-none-match"),
+            Some("etag-3")
         );
     }
 

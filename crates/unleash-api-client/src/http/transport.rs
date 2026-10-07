@@ -25,7 +25,14 @@ pub struct Request {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Response {
     pub status: u16,
+    pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JsonResponse<R> {
+    pub value: R,
+    pub headers: Vec<(String, String)>,
 }
 
 /// Error returned by [`Http::get_json`].
@@ -113,15 +120,23 @@ impl<T: Transport> Http<T> {
         &self,
         endpoint: &str,
         interval: Option<u64>,
-    ) -> Result<R, GetError> {
-        let request = self.request(Method::Get, endpoint, interval, None);
+        headers: Vec<(String, String)>,
+    ) -> Result<JsonResponse<R>, GetError> {
+        let request = self.request(Method::Get, endpoint, interval, headers, None);
         let response = self
             .transport
             .execute(request)
             .await
             .map_err(GetError::Transport)?;
         match response.status {
-            200..=299 => serde_json::from_slice(&response.body).map_err(GetError::Deserialize),
+            200..=299 => {
+                let value =
+                    serde_json::from_slice(&response.body).map_err(GetError::Deserialize)?;
+                Ok(JsonResponse {
+                    value,
+                    headers: response.headers,
+                })
+            }
             304 => Err(GetError::NotModified),
             status => Err(GetError::UnexpectedStatus(status)),
         }
@@ -134,7 +149,7 @@ impl<T: Transport> Http<T> {
         interval: Option<u64>,
     ) -> Result<bool, anyhow::Error> {
         let body = serde_json::to_vec(&content)?;
-        let request = self.request(Method::Post, endpoint, interval, Some(body));
+        let request = self.request(Method::Post, endpoint, interval, Vec::new(), Some(body));
         let response = self.transport.execute(request).await?;
         Ok((200..300).contains(&response.status))
     }
@@ -144,6 +159,7 @@ impl<T: Transport> Http<T> {
         method: Method,
         endpoint: &str,
         interval: Option<u64>,
+        extra_headers: Vec<(String, String)>,
         body: Option<Vec<u8>>,
     ) -> Request {
         let mut headers = vec![
@@ -162,6 +178,7 @@ impl<T: Transport> Http<T> {
         if let Some(interval) = interval {
             headers.push(("unleash-interval".to_string(), interval.to_string()));
         }
+        headers.extend(extra_headers);
 
         Request {
             method,
