@@ -15,7 +15,7 @@ use log::{debug, trace, warn};
 use unleash_types::client_features::ClientFeatures;
 
 use unleash_yggdrasil::state::{EnrichedContext, ExternalResultsRef, PropertiesRef};
-use unleash_yggdrasil::{EngineState, UpdateMessage};
+use unleash_yggdrasil::{EngineState, ToggleDefinition, UpdateMessage};
 use uuid::Uuid;
 
 use crate::api::{
@@ -447,6 +447,16 @@ where
         }
 
         enabled.unwrap_or(default)
+    }
+
+    /// Returns all available feature toggles.
+    pub fn list_features(&self) -> Vec<ToggleDefinition> {
+        let cache = self.cached_state();
+
+        match cache.as_ref() {
+            None => Vec::new(),
+            Some(cache) => lock_engine(&cache.engine_state).list_known_toggles(),
+        }
     }
 
     /// Memoize new features into the cached state
