@@ -255,7 +255,7 @@ where
         cache: &CachedState<F>,
         now: chrono::DateTime<Utc>,
     ) -> Option<Metrics> {
-        let mut engine_state = lock_engine(&cache.engine_state);
+        let engine_state = lock_engine(&cache.engine_state);
         let yggdrasil_metrics = engine_state.get_metrics(now)?;
 
         let bucket = MetricsBucket {
@@ -553,7 +553,7 @@ where
             &self.strategies.lock().unwrap(),
         );
 
-        let mut engine_state = EngineState::default();
+        let engine_state = EngineState::default();
         if let Some(state) = prior_state {
             let _ = engine_state.take_state(UpdateMessage::FullResponse(state));
         }
@@ -1435,7 +1435,7 @@ mod tests {
 
         let update_message = UpdateMessage::FullResponse(client_features);
 
-        let mut engine = EngineState::default();
+        let engine = EngineState::default();
         engine.take_state(update_message);
 
         let context = unleash_yggdrasil::Context {
