@@ -12,7 +12,7 @@ use arc_swap::ArcSwapOption;
 use chrono::Utc;
 use futures_timer::Delay;
 use log::{debug, trace, warn};
-use unleash_types::client_features::ClientFeatures;
+pub use unleash_types::client_features::{ClientFeature, ClientFeatures};
 
 use unleash_yggdrasil::state::{EnrichedContext, ExternalResultsRef, PropertiesRef};
 use unleash_yggdrasil::{EngineState, ToggleDefinition, UpdateMessage};
